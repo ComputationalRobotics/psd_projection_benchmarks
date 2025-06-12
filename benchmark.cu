@@ -115,6 +115,79 @@ std::chrono::duration<double> cusolver_FP64_psd( cusolverDnHandle_t solverH, cub
     return end - start;
 }
 
+__global__ void double_to_float(const double* src, float* dst, size_t nn) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < nn) {
+        dst[idx] = static_cast<float>(src[idx]);
+    }
+}
+
+void convert_double_to_float(double* dA, float* sA, size_t nn) {
+    int blockSize = 256;
+    int numBlocks = (nn + blockSize - 1) / blockSize;
+    double_to_float<<<numBlocks, blockSize>>>(dA, sA, nn);
+    CHECK_CUDA(cudaGetLastError());
+    CHECK_CUDA(cudaDeviceSynchronize());
+}
+
+std::chrono::duration<double> cusolver_FP32_psd( cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA, double* dA_psd, size_t n) {
+    int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
+    size_t nn = n * n;
+    float one_s = 1.0;
+    float zero_s = 0.0;
+
+    // convert dA from double to float
+    float *sA, *sA_psd;
+    CHECK_CUDA(cudaMalloc(&sA, nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&sA_psd, nn*sizeof(float)));
+    convert_double_to_float(dA, sA, nn);
+
+    auto start = std::chrono::high_resolution_clock::now();
+    float *sW; CHECK_CUDA(cudaMalloc(&sW, n*sizeof(float)));
+    int lwork_ev = 0;
+    CHECK_CUSOLVER(cusolverDnSsyevd_bufferSize(
+        solverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
+        n, sA, n, sW, &lwork_ev));
+    float *sWork_ev; CHECK_CUDA(cudaMalloc(&sWork_ev, lwork_ev*sizeof(float)));
+    CHECK_CUSOLVER(cusolverDnSsyevd(
+        solverH,
+        CUSOLVER_EIG_MODE_VECTOR,
+        CUBLAS_FILL_MODE_UPPER,
+        n, sA, n, sW,
+        sWork_ev, lwork_ev, devInfo));
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    std::vector<float> W_h(n);
+    CHECK_CUDA(cudaMemcpy(W_h.data(), sW, n*sizeof(float), cudaMemcpyDeviceToHost));
+    for(int i=0;i<n;i++) if(W_h[i]<0) W_h[i]=0;
+
+    // Copy eigenvectors from dA to dV
+    float *sV; CHECK_CUDA(cudaMalloc(&sV, nn*sizeof(float)));
+    CHECK_CUDA(cudaMemcpy(sV, sA, nn*sizeof(float), cudaMemcpyDeviceToDevice));
+
+    // Scale columns of dV by W_h
+    for(int i=0;i<n;i++){
+        CHECK_CUBLAS(cublasSscal(cublasH, n, &W_h[i], sV + i*n, 1));
+    }
+
+    // Reconstruct A_psd = V * V^T
+    float *sTmp; CHECK_CUDA(cudaMalloc(&sTmp, nn*sizeof(float)));
+    CHECK_CUBLAS(cublasGemmEx(
+        cublasH, CUBLAS_OP_N, CUBLAS_OP_T,
+        n, n, n,
+        &one_s,
+        sV, CUDA_R_32F, n,
+        sA, CUDA_R_32F, n,
+        &zero_s,
+        sTmp, CUDA_R_32F, n,
+        CUDA_R_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    CHECK_CUDA(cudaMemcpy(sA_psd, sTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
+    CHECK_CUDA(cudaFree(sTmp));
+    CHECK_CUDA(cudaFree(sV));
+    auto end = std::chrono::high_resolution_clock::now();
+    return end - start;
+}
+
 int main(int argc, char* argv[]) {
     std::vector<std::string> datasets;
     std::vector<size_t> instance_sizes;
@@ -146,6 +219,10 @@ int main(int argc, char* argv[]) {
 
     /* Initialize data and handles */
     std::vector<double> data;
+    std::chrono::duration<double> duration(0.0);
+    double one = 1.0, neg1 = -1.0;
+    double error = 0.0, ref_norm = 0.0, final_err = 0.0;
+
     cusolverDnHandle_t solverH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     cublasHandle_t cublasH;
@@ -178,6 +255,7 @@ int main(int argc, char* argv[]) {
     /* Main benchmarking loop */
     for (const auto& dataset : datasets) {
         for (const auto& n : instance_sizes) {
+            size_t nn = n * n;
             /* 0) Generate the matrix */
             std::cout << "DATASET '" << dataset << "' WITH INSTANCE SIZE " << n << std::endl;
 
@@ -186,10 +264,11 @@ int main(int argc, char* argv[]) {
             load_matrix(filename, data, n);
 
             // copy the matrix to the device
-            double *A, *A_psd, *A_psd_ref;
+            double *A, *A_psd, *A_psd_ref, *A_diff;
             CHECK_CUDA(cudaMalloc(&A,         n * n * sizeof(double)));
             CHECK_CUDA(cudaMalloc(&A_psd,     n * n * sizeof(double)));
             CHECK_CUDA(cudaMalloc(&A_psd_ref, n * n * sizeof(double)));
+            CHECK_CUDA(cudaMalloc(&A_diff,    n * n * sizeof(double)));
             CHECK_CUDA(cudaMemcpy(A, data.data(), n * n * sizeof(double), cudaMemcpyHostToDevice));
 
             /* 1) Pure GEMM and EIG times */
@@ -205,19 +284,68 @@ int main(int argc, char* argv[]) {
             std::cout << "\t PSD cone projection" << std::endl;
 
             // cuSOLVER FP64
-            std::chrono::duration<double> duration(0.0);
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
             for (int i = 0; i < restarts; ++i) {
-                duration += cusolver_FP64_psd(solverH, cublasH, A, A_psd_ref, n);
+                duration += cusolver_FP64_psd(solverH, cublasH, A, A_psd, n);
+
+                if (i == 0) {
+                    // copy the reference PSD matrix
+                    CHECK_CUDA(cudaMemcpy(A_psd_ref, A_psd, n * n * sizeof(double), cudaMemcpyDeviceToDevice));
+                    CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_psd_ref, 1, &ref_norm));
+                }
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                
+                error += final_err / ref_norm;
             }
             duration /= restarts;
+            error /= restarts;
             std::cout << "\t\t cuSOLVER FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
-            std::cout << "\t\t        Relative error: 0.0" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
 
             // cuSOLVER FP32
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                duration += cusolver_FP32_psd(solverH, cublasH, A, A_psd_ref, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\t cuSOLVER FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+
             // composite TF16
             // composite TF32
             // composite FP32
             // composite FP64
+
+            /* Clean up */
+            CHECK_CUDA(cudaFree(A));
+            CHECK_CUDA(cudaFree(A_psd));
+            CHECK_CUDA(cudaFree(A_psd_ref));
+            CHECK_CUDA(cudaFree(A_diff));
+            std::cout << std::endl;
         }
     }
 
