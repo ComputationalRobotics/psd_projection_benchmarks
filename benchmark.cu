@@ -368,7 +368,7 @@ void approximate_two_norm(
     cusolverDnHandle_t cusolverH,
     const double* A, size_t n,
     double* lo, double* up,
-    size_t max_iter=10, double tol=1e-3
+    size_t max_iter=25, double tol=1e-4
 ) {
     /* Allocations */
     // constants
