@@ -35,8 +35,6 @@ for dataset in datasets
         A = (A + A') / 2
 
         open("data/bin/$(dataset)-$(n).bin", "w") do io
-            write(io, size(A,1))
-            write(io, size(A,2))
             write(io, A)
         end
     end
