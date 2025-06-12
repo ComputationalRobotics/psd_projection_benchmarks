@@ -117,24 +117,9 @@ std::chrono::duration<double> cusolver_FP64_psd( cusolverDnHandle_t solverH, cub
     return end - start;
 }
 
-__global__ void double_to_float(const double* src, float* dst, size_t nn) {
-    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < nn) {
-        dst[idx] = static_cast<float>(src[idx]);
-    }
-}
-
 #define D2H cudaMemcpyDeviceToHost
 #define H2D cudaMemcpyHostToDevice
 #define D2D cudaMemcpyDeviceToDevice
-
-void convert_double_to_float(const double* dA, float* sA, size_t nn) {
-    int blockSize = 256;
-    int numBlocks = (nn + blockSize - 1) / blockSize;
-    double_to_float<<<numBlocks, blockSize>>>(dA, sA, nn);
-    CHECK_CUDA(cudaGetLastError());
-    CHECK_CUDA(cudaDeviceSynchronize());
-}
 
 std::chrono::duration<double> cusolver_FP32_psd( cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
@@ -147,7 +132,14 @@ std::chrono::duration<double> cusolver_FP32_psd( cusolverDnHandle_t solverH, cub
     float *sA, *sA_psd;
     CHECK_CUDA(cudaMalloc(&sA, nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&sA_psd, nn*sizeof(float)));
-    convert_double_to_float(dA, sA, nn);
+    
+    std::vector<double> A_h_d(nn);
+    CHECK_CUDA(cudaMemcpy(A_h_d.data(), dA, nn*sizeof(double), D2H));
+    std::vector<float> A_h(nn);
+    for (size_t i = 0; i < nn; i++) {
+        A_h[i] = static_cast<float>(A_h_d[i]);
+    }
+    CHECK_CUDA(cudaMemcpy(sA, A_h.data(), nn*sizeof(float), H2D));
 
     float *sW; CHECK_CUDA(cudaMalloc(&sW, n*sizeof(float)));
     int lwork_ev = 0;
@@ -188,8 +180,23 @@ std::chrono::duration<double> cusolver_FP32_psd( cusolverDnHandle_t solverH, cub
         sTmp, CUDA_R_32F, n,
         CUDA_R_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
     CHECK_CUDA(cudaMemcpy(sA_psd, sTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
+
+    // Convert sA_psd back to double
+    std::vector<double> A_psd_h(nn);
+    CHECK_CUDA(cudaMemcpy(A_psd_h.data(), sA_psd, nn*sizeof(float), D2H));
+    for (size_t i = 0; i < nn; i++) {
+        A_psd_h[i] = static_cast<double>(A_psd_h[i]);
+    }
+    CHECK_CUDA(cudaMemcpy(dA_psd, A_psd_h.data(), nn*sizeof(double), H2D));
+
+    // Cleanup
+    CHECK_CUDA(cudaFree(sWork_ev));
+    CHECK_CUDA(cudaFree(sW));
+    CHECK_CUDA(cudaFree(sA));
+    CHECK_CUDA(cudaFree(sA_psd));
     CHECK_CUDA(cudaFree(sTmp));
     CHECK_CUDA(cudaFree(sV));
+    
     auto end = std::chrono::high_resolution_clock::now();
     return end - start;
 }
@@ -673,6 +680,7 @@ int main(int argc, char* argv[]) {
             duration = std::chrono::duration<double>(0.0);
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
                 duration += cusolver_FP64_psd(solverH, cublasH, A, A_psd, n);
 
                 if (i == 0) {
@@ -702,6 +710,7 @@ int main(int argc, char* argv[]) {
             duration = std::chrono::duration<double>(0.0);
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
                 duration += cusolver_FP32_psd(solverH, cublasH, A, A_psd_ref, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
@@ -727,6 +736,7 @@ int main(int argc, char* argv[]) {
             duration = std::chrono::duration<double>(0.0);
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
                 duration += composite_FP32_psd(solverH, cublasH, A, A_psd_ref, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
