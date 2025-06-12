@@ -63,13 +63,15 @@ do {                                                                           \
     }                                                                          \
 }
 
-std::chrono::duration<double> cusolver_FP64_psd( cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA, double* dA_psd, size_t n) {
+std::chrono::duration<double> cusolver_FP64_psd( cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
     int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
     size_t nn = n * n;
     double one_d = 1.0;
     double zero_d = 0.0;
 
     auto start = std::chrono::high_resolution_clock::now();
+    double *dA; CHECK_CUDA(cudaMalloc(&dA, nn*sizeof(double)));
+    CHECK_CUDA(cudaMemcpy(dA, dA_orig, nn*sizeof(double), cudaMemcpyDeviceToDevice));
     double *dW; CHECK_CUDA(cudaMalloc(&dW, n*sizeof(double)));
     int lwork_ev = 0;
     CHECK_CUSOLVER(cusolverDnDsyevd_bufferSize(
@@ -122,7 +124,7 @@ __global__ void double_to_float(const double* src, float* dst, size_t nn) {
     }
 }
 
-void convert_double_to_float(double* dA, float* sA, size_t nn) {
+void convert_double_to_float(const double* dA, float* sA, size_t nn) {
     int blockSize = 256;
     int numBlocks = (nn + blockSize - 1) / blockSize;
     double_to_float<<<numBlocks, blockSize>>>(dA, sA, nn);
@@ -130,7 +132,7 @@ void convert_double_to_float(double* dA, float* sA, size_t nn) {
     CHECK_CUDA(cudaDeviceSynchronize());
 }
 
-std::chrono::duration<double> cusolver_FP32_psd( cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA, double* dA_psd, size_t n) {
+std::chrono::duration<double> cusolver_FP32_psd( cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA, double* dA_psd, size_t n) {
     int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
     size_t nn = n * n;
     float one_s = 1.0;
