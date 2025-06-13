@@ -63,6 +63,80 @@ do {                                                                           \
     }                                                                          \
 }
 
+std::chrono::duration<double> cusolver_FP64_eig(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dW, double* dA, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
+    size_t nn = n * n;
+
+    double *dW; CHECK_CUDA(cudaMalloc(&dW, n*sizeof(double)));
+    int lwork_ev = 0;
+    CHECK_CUSOLVER(cusolverDnDsyevd_bufferSize(
+        solverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
+        n, dA, n, dW, &lwork_ev));
+    double *dWork_ev; CHECK_CUDA(cudaMalloc(&dWork_ev, lwork_ev*sizeof(double)));
+    CHECK_CUSOLVER(cusolverDnDsyevd(
+        solverH,
+        CUSOLVER_EIG_MODE_VECTOR,
+        CUBLAS_FILL_MODE_UPPER,
+        n, dA, n, dW,
+        dWork_ev, lwork_ev, devInfo));
+
+    auto end = std::chrono::high_resolution_clock::now();
+    return end - start;
+}
+
+std::chrono::duration<double> cusolver_FP32_eig(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dW, double* dA, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    size_t nn = n * n;
+    float one_s = 1.0;
+    float zero_s = 0.0;
+    
+    int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
+    // convert dA from double to float
+    float *sA;
+    CHECK_CUDA(cudaMalloc(&sA, nn*sizeof(float)));
+    
+    std::vector<double> A_h_d(nn);
+    CHECK_CUDA(cudaMemcpy(A_h_d.data(), dA, nn*sizeof(double), D2H));
+    std::vector<float> A_h(nn);
+    for (size_t i = 0; i < nn; i++) {
+        A_h[i] = static_cast<float>(A_h_d[i]);
+    }
+    CHECK_CUDA(cudaMemcpy(sA, A_h.data(), nn*sizeof(float), H2D));
+
+    float *sW; CHECK_CUDA(cudaMalloc(&sW, n*sizeof(float)));
+    int lwork_ev = 0;
+    CHECK_CUSOLVER(cusolverDnSsyevd_bufferSize(
+        solverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
+        n, sA, n, sW, &lwork_ev));
+    float *sWork_ev; CHECK_CUDA(cudaMalloc(&sWork_ev, lwork_ev*sizeof(float)));
+    CHECK_CUSOLVER(cusolverDnSsyevd(
+        solverH,
+        CUSOLVER_EIG_MODE_VECTOR,
+        CUBLAS_FILL_MODE_UPPER,
+        n, sA, n, sW,
+        sWork_ev, lwork_ev, devInfo));
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    // Convert sA back to double
+    std::vector<double> dA_h(nn);
+    std::vector<float> sA_h(nn);
+    CHECK_CUDA(cudaMemcpy(sA_h.data(), sA, nn*sizeof(float), D2H));
+    for (size_t i = 0; i < nn; i++) {
+        dA_h[i] = static_cast<double>(sA_h[i]);
+    }
+    CHECK_CUDA(cudaMemcpy(dA, dA_h.data(), nn*sizeof(double), H2D));
+
+    // Cleanup
+    CHECK_CUDA(cudaFree(sWork_ev));
+    CHECK_CUDA(cudaFree(sW));
+    CHECK_CUDA(cudaFree(sA));
+
+    auto end = std::chrono::high_resolution_clock::now();
+    return end - start;
+}
+
+
 std::chrono::duration<double> cusolver_FP64_psd( cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
     int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
@@ -261,6 +335,33 @@ inline void symmetrizeFloat(
 
     // M = 0.5 * M
     CHECK_CUBLAS(cublasSscal(cublasH, n * n, &half, M, 1));
+}
+
+inline void symmetrizeDouble(
+    cublasHandle_t cublasH, double* M, int n, double* workspace
+) {
+    const double one = 1.0, half = 0.5, zero = 0.0;
+
+    // workspace = M^T
+    CHECK_CUBLAS(cublasDgeam(
+        cublasH, CUBLAS_OP_T, CUBLAS_OP_N,
+        n, n,
+        &one, M, n,
+        &zero, M, n,
+        workspace, n
+    ));
+
+    // M = M + workspace (which is M^T)
+    CHECK_CUBLAS(cublasDgeam(
+        cublasH, CUBLAS_OP_N, CUBLAS_OP_N,
+        n, n,
+        &one, M, n,
+        &one, workspace, n,
+        M, n
+    ));
+
+    // M = 0.5 * M
+    CHECK_CUBLAS(cublasDscal(cublasH, n * n, &half, M, 1));
 }
 
 void express_FP32(
@@ -845,17 +946,77 @@ int main(int argc, char* argv[]) {
             load_matrix(filename, data, n);
 
             // copy the matrix to the device
-            double *A, *A_psd, *A_psd_ref, *A_diff;
+            double *A, *A_psd, *A_psd_ref, *A_diff, *W, *W_ref, *A_eig, *A_eig_ref;
             CHECK_CUDA(cudaMalloc(&A,         n * n * sizeof(double)));
             CHECK_CUDA(cudaMalloc(&A_psd,     n * n * sizeof(double)));
             CHECK_CUDA(cudaMalloc(&A_psd_ref, n * n * sizeof(double)));
+            CHECK_CUDA(cudaMalloc(&A_eig,     n * n * sizeof(double)));
+            CHECK_CUDA(cudaMalloc(&A_eig_ref, n * n * sizeof(double)));
+            CHECK_CUDA(cudaMalloc(&W,             n * sizeof(double)));
+            CHECK_CUDA(cudaMalloc(&W_ref,         n * sizeof(double)));
             CHECK_CUDA(cudaMalloc(&A_diff,    n * n * sizeof(double)));
             CHECK_CUDA(cudaMemcpy(A, data.data(), n * n * sizeof(double), cudaMemcpyHostToDevice));
 
+
             /* 1) Pure GEMM and EIG times */
             std::cout << "\t Pure EIG and GEMM times" << std::endl;
-            // cuSOLVER FP32
+
             // cuSOLVER FP64 eig
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_eig, 0, nn * sizeof(double)));
+                CHECK_CUDA(cudaMemset(W,     0,  n * sizeof(double)));
+                duration += cusolver_FP64_eig(solverH, cublasH, A, W, A_eig, n);
+
+                if (i == 0) {
+                    // copy the reference eigenvectors matrix
+                    CHECK_CUDA(cudaMemcpy(A_eig_ref, A_eig, n * n * sizeof(double), cudaMemcpyDeviceToDevice));
+                    CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_eig_ref, 1, &ref_norm));
+                }
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_eig_ref, n,
+                    &neg1, A_eig, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\t cuSOLVER FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+
+            // cuSOLVER FP32 eig
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_eig, 0, nn * sizeof(double)));
+                CHECK_CUDA(cudaMemset(W,     0,  n * sizeof(double)));
+                duration += cusolver_FP32_psd(solverH, cublasH, A, W, A_eig, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_eig_ref, n,
+                    &neg1, A_eig, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\t cuSOLVER FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            
             // TF16
             // TF32
             // FP32
@@ -973,6 +1134,10 @@ int main(int argc, char* argv[]) {
             CHECK_CUDA(cudaFree(A_psd));
             CHECK_CUDA(cudaFree(A_psd_ref));
             CHECK_CUDA(cudaFree(A_diff));
+            CHECK_CUDA(cudaFree(A_eig));
+            CHECK_CUDA(cudaFree(A_eig_ref));
+            CHECK_CUDA(cudaFree(W));
+            CHECK_CUDA(cudaFree(W_ref));
             std::cout << std::endl;
         }
     }
