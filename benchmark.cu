@@ -10,6 +10,10 @@
 #include <cusolverDn.h>
 #include <chrono>
 
+#define D2H cudaMemcpyDeviceToHost
+#define H2D cudaMemcpyHostToDevice
+#define D2D cudaMemcpyDeviceToDevice
+
 void load_matrix(const std::string& filename, std::vector<double>& data, const int64_t instance_size) {
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
@@ -66,9 +70,7 @@ do {                                                                           \
 std::chrono::duration<double> cusolver_FP64_eig(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dW, double* dA, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
     int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
-    size_t nn = n * n;
 
-    double *dW; CHECK_CUDA(cudaMalloc(&dW, n*sizeof(double)));
     int lwork_ev = 0;
     CHECK_CUSOLVER(cusolverDnDsyevd_bufferSize(
         solverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
@@ -88,8 +90,6 @@ std::chrono::duration<double> cusolver_FP64_eig(cusolverDnHandle_t solverH, cubl
 std::chrono::duration<double> cusolver_FP32_eig(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dW, double* dA, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
     size_t nn = n * n;
-    float one_s = 1.0;
-    float zero_s = 0.0;
     
     int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
     // convert dA from double to float
@@ -190,10 +190,6 @@ std::chrono::duration<double> cusolver_FP64_psd(cusolverDnHandle_t solverH, cubl
     auto end = std::chrono::high_resolution_clock::now();
     return end - start;
 }
-
-#define D2H cudaMemcpyDeviceToHost
-#define H2D cudaMemcpyHostToDevice
-#define D2D cudaMemcpyDeviceToDevice
 
 #include <iomanip>
 // Print an n×n matrix of doubles
@@ -537,7 +533,7 @@ void express_FP64(
     for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0f;
     CHECK_CUDA( cudaMemcpy(I, I_h.data(), nn * sizeof(double), H2D) );
 
-    CHECK_CUDA( cudaMemcpy(A, mat + offset, nn * sizeof(double), D2D) );
+    CHECK_CUDA( cudaMemcpy(A, mat, nn * sizeof(double), D2D) );
 
     /* Coefficients */
     std::vector<std::vector<double>> coeff = {
@@ -884,11 +880,11 @@ std::chrono::duration<double> FP32_gemm(cublasHandle_t cublasH, const double* dA
     float zero = 0.0;
     size_t nn = n*n;
 
-    float *sA, sA2;
+    float *sA, *sA2;
     std::vector<double> A_h_d(nn);
     std::vector<float> A_h(nn);
-    CHECK_CUDA( cudaMalloc(sA,  nn * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(sA2, nn * sizeof(double)) );
+    CHECK_CUDA( cudaMalloc(&sA,  nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&sA2, nn * sizeof(float)) );
 
     CHECK_CUDA( cudaMemcpy(A_h_d.data(), dA_orig, nn * sizeof(double), D2H) );
     for (int i = 0; i < nn; i++)
@@ -1037,7 +1033,7 @@ int main(int argc, char* argv[]) {
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_eig, 0, nn * sizeof(double)));
                 CHECK_CUDA(cudaMemset(W,     0,  n * sizeof(double)));
-                duration += cusolver_FP32_psd(solverH, cublasH, A, W, A_eig, n);
+                duration += cusolver_FP32_eig(solverH, cublasH, A, W, A_eig, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error
@@ -1061,7 +1057,7 @@ int main(int argc, char* argv[]) {
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_eig, 0, nn * sizeof(double)));
-                duration += FP64_gemm(cublasH, A, W, A_eig, n);
+                duration += FP64_gemm(cublasH, A, A_eig, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 if (i == 0) {
@@ -1091,7 +1087,7 @@ int main(int argc, char* argv[]) {
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_eig, 0, nn * sizeof(double)));
-                duration += FP32_gemm(cublasH, A, W, A_eig, n);
+                duration += FP32_gemm(cublasH, A, A_eig, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error
