@@ -137,7 +137,7 @@ std::chrono::duration<double> cusolver_FP32_eig(cusolverDnHandle_t solverH, cubl
 }
 
 
-std::chrono::duration<double> cusolver_FP64_psd( cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
+std::chrono::duration<double> cusolver_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
     int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
     size_t nn = n * n;
@@ -229,7 +229,7 @@ inline void printMatrixFloat(const float* dM, int n) {
     std::cout << std::endl;
 }
 
-std::chrono::duration<double> cusolver_FP32_psd( cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA, double* dA_psd, size_t n) {
+std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
     size_t nn = n * n;
     float one_s = 1.0;
@@ -869,6 +869,45 @@ std::chrono::duration<double> composite_FP64_psd(cusolverDnHandle_t solverH, cub
     return std::chrono::high_resolution_clock::now() - start;
 }
 
+std::chrono::duration<double> FP64_gemm(cublasHandle_t cublasH, const double* dA_orig, double* dA2, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    double one = 1.0;
+    double zero = 0.0;
+    CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, dA_orig, n, dA_orig, n, &zero, dA2, n) );
+    CHECK_CUDA( cudaDeviceSynchronize() );
+    return std::chrono::high_resolution_clock::now() - start;
+}
+
+std::chrono::duration<double> FP32_gemm(cublasHandle_t cublasH, const double* dA_orig, double* dA2, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    float one = 1.0;
+    float zero = 0.0;
+    size_t nn = n*n;
+
+    float *sA, sA2;
+    std::vector<double> A_h_d(nn);
+    std::vector<float> A_h(nn);
+    CHECK_CUDA( cudaMalloc(sA,  nn * sizeof(double)) );
+    CHECK_CUDA( cudaMalloc(sA2, nn * sizeof(double)) );
+
+    CHECK_CUDA( cudaMemcpy(A_h_d.data(), dA_orig, nn * sizeof(double), D2H) );
+    for (int i = 0; i < nn; i++)
+        A_h[i] = static_cast<float>(A_h_d[i]);
+    CHECK_CUDA( cudaMemcpy(sA, A_h.data(), nn * sizeof(float), H2D) );
+
+    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, sA, n, sA, n, &zero, sA2, n) );
+    CHECK_CUDA( cudaDeviceSynchronize() );
+    
+    CHECK_CUDA( cudaMemcpy(A_h.data(), sA2, nn * sizeof(float), D2H) );
+    for (int i = 0; i < nn; i++)
+        A_h_d[i] = static_cast<double>(A_h[i]);
+    CHECK_CUDA( cudaMemcpy(dA2, A_h_d.data(), nn * sizeof(double), H2D) );
+    
+    CHECK_CUDA( cudaDeviceSynchronize() );
+
+    return std::chrono::high_resolution_clock::now() - start;
+}
+
 
 int main(int argc, char* argv[]) {
     std::vector<std::string> datasets;
@@ -958,8 +997,8 @@ int main(int argc, char* argv[]) {
             CHECK_CUDA(cudaMemcpy(A, data.data(), n * n * sizeof(double), cudaMemcpyHostToDevice));
 
 
-            /* 1) Pure GEMM and EIG times */
-            std::cout << "\t Pure EIG and GEMM times" << std::endl;
+            /* 1) Pure GEMM and EIG */
+            std::cout << "\t Pure EIG and GEMM" << std::endl;
 
             // cuSOLVER FP64 eig
             duration = std::chrono::duration<double>(0.0);
@@ -1017,10 +1056,62 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\t cuSOLVER FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
             
+            // FP64
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_eig, 0, nn * sizeof(double)));
+                duration += FP64_gemm(cublasH, A, W, A_eig, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                if (i == 0) {
+                    // copy the reference A2 matrix
+                    CHECK_CUDA(cudaMemcpy(A_eig_ref, A_eig, n * n * sizeof(double), cudaMemcpyDeviceToDevice));
+                    CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_eig_ref, 1, &ref_norm));
+                }
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_eig_ref, n,
+                    &neg1, A_eig, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\t     GEMM FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+
+            // FP32
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_eig, 0, nn * sizeof(double)));
+                duration += FP32_gemm(cublasH, A, W, A_eig, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_eig_ref, n,
+                    &neg1, A_eig, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\t     GEMM FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+
             // TF16
             // TF32
-            // FP32
-            // FP64
 
             /* 2) PSD cone projection */
             std::cout << "\t PSD cone projection" << std::endl;
