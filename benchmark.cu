@@ -943,6 +943,12 @@ int main(int argc, char* argv[]) {
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     cublasHandle_t cublasH;
     CHECK_CUBLAS(cublasCreate(&cublasH));
+    cublasHandle_t cublasH_TF32;
+    CHECK_CUBLAS(cublasCreate(&cublasH_TF32));
+    cublasSetMathMode(cublasH_TF32, CUBLAS_TF32_TENSOR_OP_MATH);
+    // cublasHandle_t cublasH_TF16;
+    // CHECK_CUBLAS(cublasCreate(&cublasH_FP16));
+    // cublasSetMathMode(cublasH_TF16, CUBLAS_FP16_TENSOR_OP_MATH);
 
     /* Warmup the GPU */
     std::cout << "Warming up the GPU...";
@@ -959,6 +965,26 @@ int main(int argc, char* argv[]) {
         CHECK_CUDA(cudaMemset(dB, 1, n * n * sizeof(double)));
         CHECK_CUBLAS(cublasDgemm(
             cublasH, CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one_d, dA, n, dB, n,
+            &zero_d, dC, n));
+        CHECK_CUDA(cudaFree(dA));
+        CHECK_CUDA(cudaFree(dB));
+        CHECK_CUDA(cudaFree(dC));
+    }
+    for (int i = 0; i < restarts; ++i) {
+        double *dA, *dB, *dC;
+        size_t n = 1024; // Use a fixed size for warmup
+        double one_d = 1.0;
+        double zero_d = 0.0;
+        CHECK_CUDA(cudaMalloc(&dA, n * n * sizeof(double)));
+        CHECK_CUDA(cudaMalloc(&dB, n * n * sizeof(double)));
+        CHECK_CUDA(cudaMalloc(&dC, n * n * sizeof(double)));
+        // Initialize dA and dB with ones
+        CHECK_CUDA(cudaMemset(dA, 1, n * n * sizeof(double)));
+        CHECK_CUDA(cudaMemset(dB, 1, n * n * sizeof(double)));
+        CHECK_CUBLAS(cublasDgemm(
+            cublasH_TF32, CUBLAS_OP_N, CUBLAS_OP_N,
             n, n, n,
             &one_d, dA, n, dB, n,
             &zero_d, dC, n));
@@ -1105,8 +1131,33 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\t     GEMM FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
 
-            // TF16
             // TF32
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_eig, 0, nn * sizeof(double)));
+                duration += FP32_gemm(cublasH, A, A_eig, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH_TF32,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_eig_ref, n,
+                    &neg1, A_eig, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\t     GEMM TF32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+
+            // TF16
+            std::cout << "\t\t     GEMM TF16 -- Time: " << "TODO" << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << "TODO" << std::endl;
 
             /* 2) PSD cone projection */
             std::cout << "\t PSD cone projection" << std::endl;
@@ -1166,7 +1217,33 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
 
             // composite TF16
-            // composite TF32
+            std::cout << "\t\tcomposite TF16 -- Time: " << "TODO" << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << "TODO" << std::endl;
+
+            // composite FP32
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += composite_FP32_psd(solverH, cublasH_TF32, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tcomposite TF32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+
             // composite FP32
             duration = std::chrono::duration<double>(0.0);
             error = 0.0;
