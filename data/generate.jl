@@ -1,4 +1,8 @@
 using MatrixDepot
+using LinearAlgebra
+
+import Random
+Random.seed!(1234)
 
 # Parse command line arguments
 function parse_args(args)
@@ -27,15 +31,28 @@ end
 
 datasets, instance_sizes = parse_args(ARGS)
 
-for dataset in datasets
-    for n in instance_sizes
-        A = matrixdepot(dataset, n)
+open("data/bin/meta.log", "w") do meta
+    for dataset in datasets
+        for n in instance_sizes
+            A = matrixdepot(dataset, n)
 
-        # symmetrize A
-        A = (A + A') / 2
+            # symmetrize A
+            A = (A + A') / 2
 
-        open("data/bin/$(dataset)-$(n).bin", "w") do io
-            write(io, A)
+            open("data/bin/$(dataset)-$(n).bin", "w") do io
+                write(io, A)
+            end
+
+            # compute the maximum and minimum eigenvalues
+            eigenvalues = eigen(A)
+            lambda_max = maximum(eigenvalues.values)
+            lambda_min = minimum(eigenvalues.values)
+
+            # write the metadata
+            write(meta, "dataset '$(dataset)' of size '$(n)'\n")
+            write(meta, "\tlambda_max: $(lambda_max)\n")
+            write(meta, "\tlambda_min: $(lambda_min)\n")
+            write(meta, "\n")
         end
     end
 end
