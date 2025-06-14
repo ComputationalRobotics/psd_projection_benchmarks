@@ -529,11 +529,11 @@ void express_FP64(
     const double zero       =  0.0;
 
     // build identity I on device
-    std::vector<double> I_h(nn, 0.0f);
-    for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0f;
+    std::vector<double> I_h(nn, 0.0);
+    for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0;
     CHECK_CUDA( cudaMemcpy(I, I_h.data(), nn * sizeof(double), H2D) );
 
-    CHECK_CUDA( cudaMemcpy(A, mat, nn * sizeof(double), D2D) );
+    CHECK_CUDA( cudaMemcpy(A, mat + mat_offset, nn * sizeof(double), D2D) );
 
     /* Coefficients */
     std::vector<std::vector<double>> coeff = {
@@ -560,7 +560,7 @@ void express_FP64(
         // A5 = A3 * A2
         CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A3, n, A2, n, &zero, A5, n) );
 
-        /* Symmetrize A3, A5 */ // TODO:
+        /* Symmetrize A3, A5 */
         symmetrizeDouble(cublasH, A3, n, A2); // we use A2 as a workspace
         symmetrizeDouble(cublasH, A5, n, A2); // we use A2 as a workspace
 
@@ -1214,7 +1214,7 @@ int main(int argc, char* argv[]) {
             duration /= restarts;
             error /= restarts;
             std::cout << "\t\tcomposite FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
-            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            std::cout << "\t\t        Relative error: \033[0;31m" << std::scientific << error << "\033[0m" << std::endl;
 
             /* Clean up */
             CHECK_CUDA(cudaFree(A));
