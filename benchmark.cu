@@ -512,13 +512,12 @@ void express_FP64(
 
     /* Allocations */
     // device memory
-    double *A, *A2, *A3, *A5, *I, *W, *Wout;
+    double *A, *A2, *A3, *A5, *I, *Wout;
     CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(double)) );
     CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(double)) );
     CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(double)) );
     CHECK_CUDA( cudaMalloc(&A5, nn * sizeof(double)) );
     CHECK_CUDA( cudaMalloc(&I,  nn * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(&W,  nn * sizeof(double)) );
     CHECK_CUDA( cudaMalloc(&Wout,  nn * sizeof(double)) );
 
     // useful constants
@@ -607,8 +606,8 @@ void express_FP64(
     symmetrizeDouble(cublasH, A, n, A2); // we use A2 as a workspace
 
     /* Multiply the original matrix by A */
-    // Wout = W * A
-    CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, W, n, A, n, &zero, Wout, n) );
+    // Wout = mat * A
+    CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, mat, n, A, n, &zero, Wout, n) );
 
     /* Symmetrize W */
     symmetrizeDouble(cublasH, Wout, n, A2); // we use A2 as a workspace
@@ -623,7 +622,6 @@ void express_FP64(
     CHECK_CUDA( cudaFree(A3) );
     CHECK_CUDA( cudaFree(A5) );
     CHECK_CUDA( cudaFree(I) );
-    CHECK_CUDA( cudaFree(W) );
     CHECK_CUDA( cudaFree(Wout) );
 }
 
@@ -850,7 +848,7 @@ std::chrono::duration<double> composite_FP64_psd(cusolverDnHandle_t solverH, cub
     );
 
     // scale to have eigenvalues in [-1, 1]
-    const double scale = up > 0.0f ? up : 1.0f;
+    const double scale = up > 0.0f ? 1.1 * up : 1.0f; // TODO: fix
     // const double scale = 1.0f;
     const double inv_scale = 1.0f/scale;
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
@@ -1215,7 +1213,7 @@ int main(int argc, char* argv[]) {
             duration /= restarts;
             error /= restarts;
             std::cout << "\t\tcomposite FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
-            std::cout << "\t\t        Relative error: \033[0;31m" << std::scientific << error << "\033[0m" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
 
             /* Clean up */
             CHECK_CUDA(cudaFree(A));
