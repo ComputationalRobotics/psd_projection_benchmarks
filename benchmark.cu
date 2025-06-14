@@ -614,7 +614,7 @@ void express_FP64(
     symmetrizeDouble(cublasH, Wout, n, A2); // we use A2 as a workspace
 
     /* Copy the result back to mat */
-    CHECK_CUDA( cudaMemcpy(mat + mat_offset, A, nn * sizeof(double), D2D) );
+    CHECK_CUDA( cudaMemcpy(mat + mat_offset, Wout, nn * sizeof(double), D2D) );
     CHECK_CUDA( cudaDeviceSynchronize() );
 
     /* Free device memory */
@@ -676,7 +676,7 @@ void approximate_two_norm(
     // V(:, 1) = q
     CHECK_CUBLAS(cublasDcopy(cublasH, n, q, 1, V, 1));
     // fill V_old with zeros
-    CHECK_CUBLAS(cublasDscal(cublasH, n, &zero, V_old, 1));
+    CHECK_CUDA(cudaMemset(V_old, 0, n * sizeof(double)));
 
     /* Lanczos loop */
     int nb_iter = 0;
@@ -807,6 +807,7 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(uk));
     CHECK_CUDA(cudaFree(y));
     CHECK_CUDA(cudaFree(ry));
+    CHECK_CUDA(cudaDeviceSynchronize());
 }
 
 std::chrono::duration<double> composite_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
