@@ -1548,12 +1548,12 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\t cuSOLVER FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
 
-            // composite TF16
+            // composite FP64
             duration = std::chrono::duration<double>(0.0);
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += composite_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
+                duration += composite_FP64_psd(solverH, cublasH, A, A_psd, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error
@@ -1569,31 +1569,7 @@ int main(int argc, char* argv[]) {
             }
             duration /= restarts;
             error /= restarts;
-            std::cout << "\t\tcomposite TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
-            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
-
-            // composite TF32
-            duration = std::chrono::duration<double>(0.0);
-            error = 0.0;
-            for (int i = 0; i < restarts; ++i) {
-                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += composite_FP32_psd(solverH, cublasH_TF32, A, A_psd, n);
-                CHECK_CUDA(cudaDeviceSynchronize());
-
-                // compute error
-                CHECK_CUBLAS(cublasDgeam(
-                    cublasH,
-                    CUBLAS_OP_N, CUBLAS_OP_N,
-                    n, n,
-                    &one,  A_psd_ref, n,
-                    &neg1, A_psd, n,
-                    A_diff,       n));
-                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
-                error += final_err / ref_norm;
-            }
-            duration /= restarts;
-            error /= restarts;
-            std::cout << "\t\tcomposite TF32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\tcomposite FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
 
             // composite FP32
@@ -1620,12 +1596,12 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\tcomposite FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
 
-            // composite FP64
+            // composite TF32
             duration = std::chrono::duration<double>(0.0);
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += composite_FP64_psd(solverH, cublasH, A, A_psd, n);
+                duration += composite_FP32_psd(solverH, cublasH_TF32, A, A_psd, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error
@@ -1641,7 +1617,31 @@ int main(int argc, char* argv[]) {
             }
             duration /= restarts;
             error /= restarts;
-            std::cout << "\t\tcomposite FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\tcomposite TF32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+
+            // composite TF16
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += composite_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tcomposite TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
 
             /* Clean up */
