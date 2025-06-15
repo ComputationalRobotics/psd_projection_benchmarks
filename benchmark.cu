@@ -1691,7 +1691,6 @@ int main(int argc, char* argv[]) {
             CHECK_CUDA(cudaFree(A_eig_ref));
             CHECK_CUDA(cudaFree(W));
             CHECK_CUDA(cudaFree(W_ref));
-            CHECK_CUDA(cudaFree(A_diff));
             CHECK_CUDA(cudaDeviceSynchronize());
             std::cout << std::endl;
         }
