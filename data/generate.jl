@@ -34,7 +34,21 @@ datasets, instance_sizes = parse_args(ARGS)
 open("data/bin/meta.log", "w") do meta
     for dataset in datasets
         for n in instance_sizes
-            A = matrixdepot(dataset, n)
+            if dataset == "squared"
+                A = rand(n, n)
+                A = (A + A') / 2
+                
+                F = qr(A)
+                A = F.Q * Diagonal([1 / i^2 for i in 1:n]) * F.Q'
+            elseif dataset == "cubed"
+                A = rand(n, n)
+                A = (A + A') / 2
+
+                F = qr(A)
+                A = F.Q * Diagonal([1 / i^3 for i in 1:n]) * F.Q'
+            else
+                A = matrixdepot(dataset, n)
+            end
 
             # symmetrize A
             A = (A + A') / 2
