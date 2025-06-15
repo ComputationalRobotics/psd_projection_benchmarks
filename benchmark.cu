@@ -83,6 +83,11 @@ std::chrono::duration<double> cusolver_FP64_eig(cusolverDnHandle_t solverH, cubl
         n, dA, n, dW,
         dWork_ev, lwork_ev, devInfo));
 
+    // cleanup
+    CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUDA(cudaFree(dWork_ev));
+    CHECK_CUDA(cudaFree(devInfo));
+
     auto end = std::chrono::high_resolution_clock::now();
     return end - start;
 }
@@ -131,6 +136,8 @@ std::chrono::duration<double> cusolver_FP32_eig(cusolverDnHandle_t solverH, cubl
     CHECK_CUDA(cudaFree(sWork_ev));
     CHECK_CUDA(cudaFree(sW));
     CHECK_CUDA(cudaFree(sA));
+    CHECK_CUDA(cudaFree(devInfo));
+    CHECK_CUDA(cudaDeviceSynchronize());
 
     auto end = std::chrono::high_resolution_clock::now();
     return end - start;
@@ -187,8 +194,13 @@ std::chrono::duration<double> cusolver_FP64_psd(cusolverDnHandle_t solverH, cubl
     CHECK_CUDA(cudaMemcpy(dA_psd, dTmp, nn*sizeof(double), cudaMemcpyDeviceToDevice));
     CHECK_CUDA(cudaFree(dTmp));
     CHECK_CUDA(cudaFree(dV));
-    auto end = std::chrono::high_resolution_clock::now();
-    return end - start;
+    CHECK_CUDA(cudaFree(dWork_ev));
+    CHECK_CUDA(cudaFree(dW));
+    CHECK_CUDA(cudaFree(dA));
+    CHECK_CUDA(cudaFree(devInfo));
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    return std::chrono::high_resolution_clock::now() - start;
 }
 
 #include <iomanip>
@@ -301,9 +313,10 @@ std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cubl
     CHECK_CUDA(cudaFree(sA_psd));
     CHECK_CUDA(cudaFree(sTmp));
     CHECK_CUDA(cudaFree(sV));
+    CHECK_CUDA(cudaFree(devInfo));
+    CHECK_CUDA(cudaDeviceSynchronize());
 
-    auto end = std::chrono::high_resolution_clock::now();
-    return end - start;
+    return std::chrono::high_resolution_clock::now() - start;
 }
 
 inline void symmetrizeFloat(
@@ -904,6 +917,9 @@ std::chrono::duration<double> FP32_gemm(cublasHandle_t cublasH, const double* dA
         A_h_d[i] = static_cast<double>(A_h[i]);
     CHECK_CUDA( cudaMemcpy(dA2, A_h_d.data(), nn * sizeof(double), H2D) );
     
+    CHECK_CUDA( cudaFree(sA) );
+    CHECK_CUDA( cudaFree(sA2) );
+
     CHECK_CUDA( cudaDeviceSynchronize() );
 
     return (std::chrono::high_resolution_clock::now() - start) / static_cast<double>(gemm_restarts);
@@ -978,6 +994,9 @@ std::chrono::duration<double> TF16_gemm(cublasHandle_t cublasH, const double* dA
     CHECK_CUDA( cudaMemcpy(dA2, A_h_d.data(), nn * sizeof(double), H2D) );
     
     CHECK_CUDA( cudaDeviceSynchronize() );
+    CHECK_CUDA( cudaFree(sA) );
+    CHECK_CUDA( cudaFree(sA2) );
+    CHECK_CUDA( cudaFree(hA) );
 
     return (std::chrono::high_resolution_clock::now() - start) / static_cast<double>(gemm_restarts);
 }
@@ -1672,6 +1691,8 @@ int main(int argc, char* argv[]) {
             CHECK_CUDA(cudaFree(A_eig_ref));
             CHECK_CUDA(cudaFree(W));
             CHECK_CUDA(cudaFree(W_ref));
+            CHECK_CUDA(cudaFree(A_diff));
+            CHECK_CUDA(cudaDeviceSynchronize());
             std::cout << std::endl;
         }
     }
