@@ -9,6 +9,7 @@
 #include <cublas_v2.h>
 #include <cusolverDn.h>
 #include <chrono>
+#include <curand_kernel.h>
 
 #define D2H cudaMemcpyDeviceToHost
 #define H2D cudaMemcpyHostToDevice
@@ -671,6 +672,26 @@ void express_FP64(
     CHECK_CUDA( cudaFree(Wout) );
 }
 
+__global__ void fill_random_kernel(double* vec, int n, unsigned long seed) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        curandState state;
+        curand_init(seed, idx, 0, &state);
+        vec[idx] = curand_uniform_double(&state); // random double in (0,1]
+    }
+}
+
+void fill_random(double* vec, int n, unsigned long seed, const int threadsPerBlock = 1024) {
+    int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
+    // printf("blocks: %d, threads per block: %d \n", blocks, threadsPerBlock);
+    fill_random_kernel<<<blocks, threadsPerBlock>>>(vec, n, seed);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error in fill_random: %s\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+}
+
 void approximate_two_norm(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,
@@ -685,23 +706,20 @@ void approximate_two_norm(
     
     // storage
     double *V, *V_old, *alpha, *q, *w;
+    max_iter = max(max_iter, n);
     CHECK_CUDA(cudaMalloc(&V,     n * max_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&V_old,            n * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&alpha,     max_iter * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&alpha,     max_iter * sizeof(double))); // TODO: on host
     CHECK_CUDA(cudaMalloc(&q,                n * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&w,                n * sizeof(double)));
 
     std::vector<double> beta(max_iter, 0.0);
 
-    double minus_alpha, minus_beta_old;
+    double minus_alpha, minus_beta_old = 0.0;
 
     /* Initial vector */
     // q = randn(n, 1)
-    std::vector<double> q_host(n);
-    for (size_t i = 0; i < n; ++i) {
-        q_host[i] = 2.0 * (static_cast<double>(rand()) / RAND_MAX) - 1.0; // Random values in [-1, 1)
-    }
-    CHECK_CUDA(cudaMemcpy(q, q_host.data(), n * sizeof(double), cudaMemcpyHostToDevice));
+    fill_random(q, n, 0);
 
     // q = q / norm(q)
     double norm_q;
@@ -755,7 +773,7 @@ void approximate_two_norm(
             CHECK_CUBLAS(cublasDscal(cublasH, n, &beta_inv, q, 1));
         } else {
             // If beta is zero, we cannot proceed further
-            fprintf(stderr, "Lanczos iteration %d: beta is zero, stopping early.\n", k);
+            // fprintf(stderr, "Lanczos iteration %d: beta is zero, stopping early.\n", k);
             break;
         }
 
@@ -767,6 +785,22 @@ void approximate_two_norm(
         minus_beta_old = -beta[k];
 
         nb_iter++;
+    }
+
+    // printf("nb_iter: %d \n", nb_iter);
+    if (nb_iter == 0) {
+        // in this case, the matrix is an all-zero matrix
+        *lo = 0.0;
+        *up = 1.0;
+
+        CHECK_CUDA(cudaFree(V));
+        CHECK_CUDA(cudaFree(V_old));
+        CHECK_CUDA(cudaFree(alpha));
+        CHECK_CUDA(cudaFree(q));
+        CHECK_CUDA(cudaFree(w));
+        CHECK_CUDA(cudaDeviceSynchronize());
+
+        return;
     }
 
     /* Tridiagonal T */
@@ -858,6 +892,8 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(y));
     CHECK_CUDA(cudaFree(ry));
     CHECK_CUDA(cudaDeviceSynchronize());
+
+    return;
 }
 
 std::chrono::duration<double> composite_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
