@@ -1603,11 +1603,53 @@ std::chrono::duration<double> haoyu_TF16_psd(
     return std::chrono::high_resolution_clock::now() - start;
 }
 
+void append_csv(
+    const std::string& filename,
+    const std::string& method,
+    const std::string& dataset,
+    size_t n,
+    const std::chrono::duration<double>& duration,
+    double relative_error
+) {
+    std::ofstream file(filename, std::ios_base::app);
+    if (!file.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        return;
+    }
+    file << dataset << ","
+         << n << ","
+         << method << ","
+         << std::fixed << std::setprecision(17)
+         << duration.count() << ","
+         << relative_error << "\n";
+    file.close();
+}
+
 int main(int argc, char* argv[]) {
     std::vector<std::string> datasets;
     std::vector<size_t> instance_sizes;
     int restarts = 1;
     int gemm_restarts = 1;
+    std::string gemm_output_file = "gemm_results.csv";
+    std::string psd_output_file = "psd_results.csv";
+
+    // check if the files are empty
+    std::ofstream gemm_file(gemm_output_file, std::ios_base::app);
+    if (gemm_file.tellp() == 0) {
+        gemm_file << "dataset,n,method,time,relative_error\n";
+    } else {
+        std::cerr << "ERROR: " << gemm_output_file << " already exists and is not empty." << std::endl;
+        return 1;
+    }
+    gemm_file.close();
+    std::ofstream psd_file(psd_output_file, std::ios_base::app);
+    if (psd_file.tellp() == 0) {
+        psd_file << "dataset,n,method,time,relative_error\n";
+    } else {
+        std::cerr << "ERROR: " << psd_output_file << " already exists and is not empty." << std::endl;
+        return 1;
+    }
+    psd_file.close();
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
@@ -1759,6 +1801,7 @@ int main(int argc, char* argv[]) {
                 error /= restarts;
                 std::cout << "\t\t cuSOLVER FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
                 std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+                append_csv(gemm_output_file, "cuSOLVER FP64", dataset, n, duration, error);
 
                 // cuSOLVER FP32 eig
                 duration = std::chrono::duration<double>(0.0);
@@ -1784,6 +1827,7 @@ int main(int argc, char* argv[]) {
                 error /= restarts;
                 std::cout << "\t\t cuSOLVER FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
                 std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+                append_csv(gemm_output_file, "cuSOLVER FP32", dataset, n, duration, error);
                 
                 // FP64
                 duration = std::chrono::duration<double>(0.0);
@@ -1815,6 +1859,7 @@ int main(int argc, char* argv[]) {
                 std::cout << "\t\t     GEMM FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
                 std::cout << "\t\t           Total error: " << std::scientific << error << std::endl;
                 std::cout << "\t\t        Relative error: " << std::scientific << error / ref_norm << std::endl;
+                append_csv(gemm_output_file, "GEMM FP64", dataset, n, duration, error);
 
                 // FP32
                 duration = std::chrono::duration<double>(0.0);
@@ -1840,6 +1885,7 @@ int main(int argc, char* argv[]) {
                 std::cout << "\t\t     GEMM FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
                 std::cout << "\t\t           Total error: " << std::scientific << error << std::endl;
                 std::cout << "\t\t        Relative error: " << std::scientific << error / ref_norm << std::endl;
+                append_csv(gemm_output_file, "GEMM FP32", dataset, n, duration, error);
 
                 // TF32
                 duration = std::chrono::duration<double>(0.0);
@@ -1865,6 +1911,7 @@ int main(int argc, char* argv[]) {
                 std::cout << "\t\t     GEMM TF32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
                 std::cout << "\t\t           Total error: " << std::scientific << error << std::endl;
                 std::cout << "\t\t        Relative error: " << std::scientific << error / ref_norm << std::endl;
+                append_csv(gemm_output_file, "GEMM TF32", dataset, n, duration, error);
 
                 // TF16
                 duration = std::chrono::duration<double>(0.0);
@@ -1890,6 +1937,7 @@ int main(int argc, char* argv[]) {
                 std::cout << "\t\t     GEMM TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
                 std::cout << "\t\t           Total error: " << std::scientific << error << std::endl;
                 std::cout << "\t\t        Relative error: " << std::scientific << error / ref_norm << std::endl;
+                append_csv(gemm_output_file, "GEMM TF16", dataset, n, duration, error);
             }
 
             /* 2) PSD cone projection */
@@ -1924,6 +1972,7 @@ int main(int argc, char* argv[]) {
             error /= restarts;
             std::cout << "\t\t cuSOLVER FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "cuSOLVER FP64", dataset, n, duration, error);
 
             // cuSOLVER FP32
             // duration = std::chrono::duration<double>(0.0);
@@ -1948,6 +1997,7 @@ int main(int argc, char* argv[]) {
             // error /= restarts;
             // std::cout << "\t\t cuSOLVER FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             // std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            // append_csv(psd_output_file, "cuSOLVER FP32", dataset, n, duration, error);
 
             // // composite FP64
             // duration = std::chrono::duration<double>(0.0);
@@ -1972,6 +2022,7 @@ int main(int argc, char* argv[]) {
             // error /= restarts;
             // std::cout << "\t\tcomposite FP64 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             // std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            // append_csv(psd_output_file, "composite FP64", dataset, n, duration, error);
 
             // composite FP32
             duration = std::chrono::duration<double>(0.0);
@@ -1996,6 +2047,7 @@ int main(int argc, char* argv[]) {
             error /= restarts;
             std::cout << "\t\tcomposite FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "composite FP32", dataset, n, duration, error);
 
             // composite TF32
             // duration = std::chrono::duration<double>(0.0);
@@ -2020,6 +2072,7 @@ int main(int argc, char* argv[]) {
             // error /= restarts;
             // std::cout << "\t\tcomposite TF32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             // std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            // append_csv(psd_output_file, "composite TF32", dataset, n, duration, error);
 
             // composite TF16
             // duration = std::chrono::duration<double>(0.0);
@@ -2068,6 +2121,7 @@ int main(int argc, char* argv[]) {
             // error /= restarts;
             // std::cout << "\t\t    haoyu TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             // std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            // append_csv(psd_output_file, "haoyu TF16", dataset, n, duration, error);
 
             /* Clean up */
             CHECK_CUDA(cudaFree(A));
