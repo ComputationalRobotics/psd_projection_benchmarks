@@ -706,209 +706,209 @@ void fill_random(double* vec, int n, unsigned long seed = 0, const int threadsPe
     }
 }
 
-// void approximate_two_norm(
-//     cublasHandle_t cublasH,
-//     cusolverDnHandle_t cusolverH,
-//     const double* A, size_t n,
-//     double* lo, double* up,
-//     size_t max_iter=20, double tol=1e-3
-// ) {
-//     /* Allocations */
-//     // constants
-//     const double zero = 0.0;
-//     const double one = 1.0;
+void approximate_two_norm(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t cusolverH,
+    const double* A, size_t n,
+    double* lo, double* up,
+    size_t max_iter=10, double tol=1e-3
+) {
+    /* Allocations */
+    // constants
+    const double zero = 0.0;
+    const double one = 1.0;
     
-//     // storage
-//     double *V, *V_old, *alpha, *q, *w;
-//     max_iter = max(max_iter, n);
-//     CHECK_CUDA(cudaMalloc(&V,     n * max_iter * sizeof(double)));
-//     CHECK_CUDA(cudaMalloc(&V_old,            n * sizeof(double)));
-//     CHECK_CUDA(cudaMalloc(&alpha,     max_iter * sizeof(double))); // TODO: on host
-//     CHECK_CUDA(cudaMalloc(&q,                n * sizeof(double)));
-//     CHECK_CUDA(cudaMalloc(&w,                n * sizeof(double)));
+    // storage
+    double *V, *V_old, *alpha, *q, *w;
+    max_iter = max(max_iter, n);
+    CHECK_CUDA(cudaMalloc(&V,     n * max_iter * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&V_old,            n * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&alpha,     max_iter * sizeof(double))); // TODO: on host
+    CHECK_CUDA(cudaMalloc(&q,                n * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&w,                n * sizeof(double)));
 
-//     std::vector<double> beta(max_iter, 0.0);
+    std::vector<double> beta(max_iter, 0.0);
 
-//     double minus_alpha, minus_beta_old = 0.0;
+    double minus_alpha, minus_beta_old = 0.0;
 
-//     /* Initial vector */
-//     // q = randn(n, 1)
-//     fill_random(q, n, 0);
+    /* Initial vector */
+    // q = randn(n, 1)
+    fill_random(q, n, 0);
 
-//     // q = q / norm(q)
-//     double norm_q;
-//     CHECK_CUBLAS(cublasDnrm2(cublasH, n, q, 1, &norm_q));
-//     if (norm_q != 0.0) {
-//         double norm_q_inv = 1.0 / norm_q;
-//         CHECK_CUBLAS(cublasDscal(cublasH, n, &norm_q_inv, q, 1));
-//     }
+    // q = q / norm(q)
+    double norm_q;
+    CHECK_CUBLAS(cublasDnrm2(cublasH, n, q, 1, &norm_q));
+    if (norm_q != 0.0) {
+        double norm_q_inv = 1.0 / norm_q;
+        CHECK_CUBLAS(cublasDscal(cublasH, n, &norm_q_inv, q, 1));
+    }
 
-//     // V(:, 1) = q
-//     CHECK_CUBLAS(cublasDcopy(cublasH, n, q, 1, V, 1));
-//     // fill V_old with zeros
-//     CHECK_CUDA(cudaMemset(V_old, 0, n * sizeof(double)));
+    // V(:, 1) = q
+    CHECK_CUBLAS(cublasDcopy(cublasH, n, q, 1, V, 1));
+    // fill V_old with zeros
+    CHECK_CUDA(cudaMemset(V_old, 0, n * sizeof(double)));
 
-//     /* Lanczos loop */
-//     int nb_iter = 0;
-//     for (int k = 0; k < max_iter; k++) {
-//         // w = A * q
-//         CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, n,
-//                                  &one, A, n, q, 1,
-//                                  &zero, w, 1));
-//         // w = At * w
-//         CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, n,
-//                                  &one, A, n, w, 1,
-//                                  &zero, w, 1));
-//         // hence w = A^T * A * q
+    /* Lanczos loop */
+    int nb_iter = 0;
+    for (int k = 0; k < max_iter; k++) {
+        // w = A * q
+        CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, n,
+                                 &one, A, n, q, 1,
+                                 &zero, w, 1));
+        // w = At * w
+        CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, n,
+                                 &one, A, n, w, 1,
+                                 &zero, w, 1));
+        // hence w = A^T * A * q
 
-//         // alpha(k) = q^T * w
-//         CHECK_CUBLAS(cublasDdot(cublasH, n, q, 1, w, 1, &alpha[k]));
+        // alpha(k) = q^T * w
+        CHECK_CUBLAS(cublasDdot(cublasH, n, q, 1, w, 1, &alpha[k]));
 
-//         // minus_alpha = -alpha[k]
-//         CHECK_CUDA(cudaMemcpy(&minus_alpha, &alpha[k], sizeof(double), D2H));
-//         minus_alpha = -minus_alpha;
+        // minus_alpha = -alpha[k]
+        CHECK_CUDA(cudaMemcpy(&minus_alpha, &alpha[k], sizeof(double), D2H));
+        minus_alpha = -minus_alpha;
         
-//         // w = w - alpha(k) * q - beta_old * V_old
-//         CHECK_CUBLAS(cublasDaxpy(cublasH, n, &minus_alpha, q, 1, w, 1));
-//         CHECK_CUBLAS(cublasDaxpy(cublasH, n, &minus_beta_old, V_old, 1, w, 1));
+        // w = w - alpha(k) * q - beta_old * V_old
+        CHECK_CUBLAS(cublasDaxpy(cublasH, n, &minus_alpha, q, 1, w, 1));
+        CHECK_CUBLAS(cublasDaxpy(cublasH, n, &minus_beta_old, V_old, 1, w, 1));
         
-//         // beta(k) = norm(w)
-//         CHECK_CUBLAS(cublasDnrm2(cublasH, n, w, 1, &beta[k]));
+        // beta(k) = norm(w)
+        CHECK_CUBLAS(cublasDnrm2(cublasH, n, w, 1, &beta[k]));
 
-//         if (beta[k] <= tol * (-minus_alpha) && k > 1)
-//             break;
+        if (beta[k] <= tol * (-minus_alpha) && k > 1)
+            break;
             
-//         // V_old = q
-//         CHECK_CUBLAS(cublasDcopy(cublasH, n, q, 1, V_old, 1));
-//         // q = w / beta(k)
-//         CHECK_CUDA(cudaMemcpy(q, w, n * sizeof(double), cudaMemcpyDeviceToDevice));
-//         if (beta[k] != 0.0) {
-//             double beta_inv = 1.0 / beta[k];
-//             CHECK_CUBLAS(cublasDscal(cublasH, n, &beta_inv, q, 1));
-//         } else {
-//             // If beta is zero, we cannot proceed further
-//             // fprintf(stderr, "Lanczos iteration %d: beta is zero, stopping early.\n", k);
-//             break;
-//         }
+        // V_old = q
+        CHECK_CUBLAS(cublasDcopy(cublasH, n, q, 1, V_old, 1));
+        // q = w / beta(k)
+        CHECK_CUDA(cudaMemcpy(q, w, n * sizeof(double), cudaMemcpyDeviceToDevice));
+        if (beta[k] != 0.0) {
+            double beta_inv = 1.0 / beta[k];
+            CHECK_CUBLAS(cublasDscal(cublasH, n, &beta_inv, q, 1));
+        } else {
+            // If beta is zero, we cannot proceed further
+            // fprintf(stderr, "Lanczos iteration %d: beta is zero, stopping early.\n", k);
+            break;
+        }
 
-//         if (k < max_iter - 1) {
-//             // V(:, k+1) = q
-//             CHECK_CUBLAS(cublasDcopy(cublasH, n, q, 1, V + (k + 1) * n, 1));
-//         }
-//         // minus_beta_old = -beta[k]
-//         minus_beta_old = -beta[k];
+        if (k < max_iter - 1) {
+            // V(:, k+1) = q
+            CHECK_CUBLAS(cublasDcopy(cublasH, n, q, 1, V + (k + 1) * n, 1));
+        }
+        // minus_beta_old = -beta[k]
+        minus_beta_old = -beta[k];
 
-//         nb_iter++;
-//     }
+        nb_iter++;
+    }
 
-//     // printf("nb_iter: %d \n", nb_iter);
-//     if (nb_iter == 0) {
-//         // in this case, the matrix is an all-zero matrix
-//         *lo = 0.0;
-//         *up = 1.0;
+    // printf("nb_iter: %d \n", nb_iter);
+    if (nb_iter == 0) {
+        // in this case, the matrix is an all-zero matrix
+        *lo = 0.0;
+        *up = 1.0;
 
-//         CHECK_CUDA(cudaFree(V));
-//         CHECK_CUDA(cudaFree(V_old));
-//         CHECK_CUDA(cudaFree(alpha));
-//         CHECK_CUDA(cudaFree(q));
-//         CHECK_CUDA(cudaFree(w));
-//         CHECK_CUDA(cudaDeviceSynchronize());
+        CHECK_CUDA(cudaFree(V));
+        CHECK_CUDA(cudaFree(V_old));
+        CHECK_CUDA(cudaFree(alpha));
+        CHECK_CUDA(cudaFree(q));
+        CHECK_CUDA(cudaFree(w));
+        CHECK_CUDA(cudaDeviceSynchronize());
 
-//         return;
-//     }
+        return;
+    }
 
-//     /* Tridiagonal T */
-//     // T = diag(alpha) + diag(beta(2:end),1) + diag(beta(2:end),-1);
-//     double *T;
-//     CHECK_CUDA(cudaMalloc(&T, nb_iter * nb_iter * sizeof(double)));
-//     std::vector<double> alpha_host(nb_iter, 0.0);
-//     CHECK_CUDA(cudaMemcpy(alpha_host.data(), alpha, nb_iter * sizeof(double), cudaMemcpyDeviceToHost));
-//     std::vector<double> T_host(nb_iter * nb_iter, 0.0);
-//     for (int i = 0; i < nb_iter; i++) {
-//         T_host[i * nb_iter + i] = alpha_host[i]; // diagonal
-//         if (i < nb_iter - 1) {
-//             T_host[i * nb_iter + (i + 1)] = beta[i + 1]; // upper diagonal
-//             T_host[(i + 1) * nb_iter + i] = beta[i + 1]; // lower diagonal
-//         }
-//     }
-//     CHECK_CUDA(cudaMemcpy(T, T_host.data(), nb_iter * nb_iter * sizeof(double), H2D));
+    /* Tridiagonal T */
+    // T = diag(alpha) + diag(beta(2:end),1) + diag(beta(2:end),-1);
+    double *T;
+    CHECK_CUDA(cudaMalloc(&T, nb_iter * nb_iter * sizeof(double)));
+    std::vector<double> alpha_host(nb_iter, 0.0);
+    CHECK_CUDA(cudaMemcpy(alpha_host.data(), alpha, nb_iter * sizeof(double), cudaMemcpyDeviceToHost));
+    std::vector<double> T_host(nb_iter * nb_iter, 0.0);
+    for (int i = 0; i < nb_iter; i++) {
+        T_host[i * nb_iter + i] = alpha_host[i]; // diagonal
+        if (i < nb_iter - 1) {
+            T_host[i * nb_iter + (i + 1)] = beta[i + 1]; // upper diagonal
+            T_host[(i + 1) * nb_iter + i] = beta[i + 1]; // lower diagonal
+        }
+    }
+    CHECK_CUDA(cudaMemcpy(T, T_host.data(), nb_iter * nb_iter * sizeof(double), H2D));
 
-//     /* Largest Ritz pair */
-//     // allocate memory for eigenvalues
-//     double *d_eigenvalues;
-//     CHECK_CUDA(cudaMalloc(&d_eigenvalues, nb_iter * sizeof(double)));
+    /* Largest Ritz pair */
+    // allocate memory for eigenvalues
+    double *d_eigenvalues;
+    CHECK_CUDA(cudaMalloc(&d_eigenvalues, nb_iter * sizeof(double)));
 
-//     // allocate workspace for eigenvalue decomposition
-//     int lwork_eig, *devInfo;
-//     double *d_work_eig;
-//     CHECK_CUSOLVER(cusolverDnDsyevd_bufferSize(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
-//                                                nb_iter, T, nb_iter, d_eigenvalues, &lwork_eig));
-//     CHECK_CUDA(cudaMalloc(&d_work_eig, lwork_eig * sizeof(double)));
-//     CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
+    // allocate workspace for eigenvalue decomposition
+    int lwork_eig, *devInfo;
+    double *d_work_eig;
+    CHECK_CUSOLVER(cusolverDnDsyevd_bufferSize(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
+                                               nb_iter, T, nb_iter, d_eigenvalues, &lwork_eig));
+    CHECK_CUDA(cudaMalloc(&d_work_eig, lwork_eig * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
 
-//     // compute eigenvalues and eigenvectors
-//     CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
-//                                     nb_iter, T, nb_iter, d_eigenvalues,
-//                                     d_work_eig, lwork_eig, devInfo));
+    // compute eigenvalues and eigenvectors
+    CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
+                                    nb_iter, T, nb_iter, d_eigenvalues,
+                                    d_work_eig, lwork_eig, devInfo));
 
-//     // retrieve the max eigenvalue and corresponding eigenvector
-//     int idx_max;
-//     CHECK_CUBLAS(cublasIdamax(cublasH, nb_iter, d_eigenvalues, 1, &idx_max));
-//     idx_max--; // convert to 0-based index
+    // retrieve the max eigenvalue and corresponding eigenvector
+    int idx_max;
+    CHECK_CUBLAS(cublasIdamax(cublasH, nb_iter, d_eigenvalues, 1, &idx_max));
+    idx_max--; // convert to 0-based index
 
-//     double theta;
-//     CHECK_CUDA(cudaMemcpy(&theta, d_eigenvalues + idx_max, sizeof(double), D2H));
+    double theta;
+    CHECK_CUDA(cudaMemcpy(&theta, d_eigenvalues + idx_max, sizeof(double), D2H));
 
-//     double *uk, *y;
-//     CHECK_CUDA(cudaMalloc(&uk, nb_iter * sizeof(double)));
-//     CHECK_CUDA(cudaMalloc(&y,        n * sizeof(double)));
-//     // uk = T(:, idx_max)
-//     CHECK_CUBLAS(cublasDcopy(cublasH, nb_iter, T + idx_max * nb_iter, 1, uk, 1));
-//     // y = V(:,1:nb_iter) * uk
-//     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, nb_iter, &one, V, n, uk, 1, &zero, y, 1));
+    double *uk, *y;
+    CHECK_CUDA(cudaMalloc(&uk, nb_iter * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&y,        n * sizeof(double)));
+    // uk = T(:, idx_max)
+    CHECK_CUBLAS(cublasDcopy(cublasH, nb_iter, T + idx_max * nb_iter, 1, uk, 1));
+    // y = V(:,1:nb_iter) * uk
+    CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, nb_iter, &one, V, n, uk, 1, &zero, y, 1));
 
-//     double *ry;
-//     CHECK_CUDA(cudaMalloc(&ry, n * sizeof(double)));
-//     // ry = A * q
-//     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, n,
-//                                 &one, A, n, q, 1,
-//                                 &zero, ry, 1));
-//     // ry = At * ry
-//     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, n,
-//                                 &one, A, n, ry, 1,
-//                                 &zero, ry, 1));
-//     // hence ry = A^T * A * q
+    double *ry;
+    CHECK_CUDA(cudaMalloc(&ry, n * sizeof(double)));
+    // ry = A * q
+    CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, n,
+                                &one, A, n, q, 1,
+                                &zero, ry, 1));
+    // ry = At * ry
+    CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, n,
+                                &one, A, n, ry, 1,
+                                &zero, ry, 1));
+    // hence ry = A^T * A * q
 
-//     // ry = ry - theta * y
-//     double minus_theta = -theta;
-//     CHECK_CUBLAS(cublasDaxpy(cublasH, n, &minus_theta, y, 1, ry, 1));
+    // ry = ry - theta * y
+    double minus_theta = -theta;
+    CHECK_CUBLAS(cublasDaxpy(cublasH, n, &minus_theta, y, 1, ry, 1));
 
-//     /* Output */
-//     // lo = sqrt(theta)
-//     *lo = std::sqrt(theta);
+    /* Output */
+    // lo = sqrt(theta)
+    *lo = std::sqrt(theta);
 
-//     // up = sqrt(theta + norm(ry))
-//     double norm_ry;
-//     CHECK_CUBLAS(cublasDnrm2(cublasH, n, ry, 1, &norm_ry));
-//     *up = std::sqrt(theta + norm_ry);
+    // up = sqrt(theta + norm(ry))
+    double norm_ry;
+    CHECK_CUBLAS(cublasDnrm2(cublasH, n, ry, 1, &norm_ry));
+    *up = std::sqrt(theta + norm_ry);
 
-//     /* Free memory */
-//     CHECK_CUDA(cudaFree(V));
-//     CHECK_CUDA(cudaFree(V_old));
-//     CHECK_CUDA(cudaFree(alpha));
-//     CHECK_CUDA(cudaFree(q));
-//     CHECK_CUDA(cudaFree(w));
-//     CHECK_CUDA(cudaFree(T));
-//     CHECK_CUDA(cudaFree(d_eigenvalues));
-//     CHECK_CUDA(cudaFree(d_work_eig));
-//     CHECK_CUDA(cudaFree(devInfo));
-//     CHECK_CUDA(cudaFree(uk));
-//     CHECK_CUDA(cudaFree(y));
-//     CHECK_CUDA(cudaFree(ry));
-//     CHECK_CUDA(cudaDeviceSynchronize());
+    /* Free memory */
+    CHECK_CUDA(cudaFree(V));
+    CHECK_CUDA(cudaFree(V_old));
+    CHECK_CUDA(cudaFree(alpha));
+    CHECK_CUDA(cudaFree(q));
+    CHECK_CUDA(cudaFree(w));
+    CHECK_CUDA(cudaFree(T));
+    CHECK_CUDA(cudaFree(d_eigenvalues));
+    CHECK_CUDA(cudaFree(d_work_eig));
+    CHECK_CUDA(cudaFree(devInfo));
+    CHECK_CUDA(cudaFree(uk));
+    CHECK_CUDA(cudaFree(y));
+    CHECK_CUDA(cudaFree(ry));
+    CHECK_CUDA(cudaDeviceSynchronize());
 
-//     return;
-// }
+    return;
+}
 
 __global__ void compute_res_all_kernel(const double* Z, double beta_m, double* res_all, int m) {
     int j = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1191,32 +1191,32 @@ double compute_eigenpairs(
     return norm_upper + 1e-3;
 }
 
-// std::chrono::duration<double> composite_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
-//     auto start = std::chrono::high_resolution_clock::now();
-//     size_t nn = n * n;
+std::chrono::duration<double> composite_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    size_t nn = n * n;
     
-//     CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
 
-//     double lo, up;
-//     approximate_two_norm(
-//         cublasH, solverH, dA_psd, n, &lo, &up
-//     ); // TODO: sometimes we use a TF32 handle here but the computations are done in FP64
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, dA_psd, n, &lo, &up
+    ); // TODO: sometimes we use a TF32 handle here but the computations are done in FP64
 
-//     // scale to have eigenvalues in [-1, 1]
-//     const double scale = up > 0.0 ? up : 1.0;
-//     const double inv_scale = 1.0/scale;
-//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-//     express_FP32(
-//         cublasH, dA_psd, n, 0
-//     );
+    express_FP32(
+        cublasH, dA_psd, n, 0
+    );
 
-//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
 
-//     CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUDA(cudaDeviceSynchronize());
 
-//     return std::chrono::high_resolution_clock::now() - start;
-// }
+    return std::chrono::high_resolution_clock::now() - start;
+}
 
 std::chrono::duration<double> composite_FP32_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
@@ -1238,11 +1238,6 @@ std::chrono::duration<double> composite_FP32_psd_deflate(cusolverDnHandle_t solv
 
     std::vector<double> eigenvalues_host(r);
     CHECK_CUDA( cudaMemcpy(eigenvalues_host.data(), eigenvalues, r * sizeof(double), D2H) );
-
-    // double lo, up;
-    // approximate_two_norm(
-    //     cublasH, solverH, dA_psd, n, &lo, &up
-    // ); // TODO: sometimes we use a TF32 handle here but the computations are done in FP64
 
     /* Step 2: remove the largest eigenvalues from the matrix */
     for (int i = 0; i < r; i++) {
@@ -1702,32 +1697,32 @@ void express_TF16(
     CHECK_CUDA( cudaDeviceSynchronize() );
 }
 
-// std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
-//     auto start = std::chrono::high_resolution_clock::now();
-//     size_t nn = n * n;
+std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    size_t nn = n * n;
     
-//     CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
 
-//     double lo, up;
-//     approximate_two_norm(
-//         cublasH, solverH, dA_psd, n, &lo, &up
-//     ); // TODO: we use a TF16 handle here but the computations are done in FP64
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, dA_psd, n, &lo, &up
+    ); // TODO: we use a TF16 handle here but the computations are done in FP64
 
-//     // scale to have eigenvalues in [-1, 1]
-//     const double scale = up > 0.0 ? up : 1.0;
-//     const double inv_scale = 1.0/scale;
-//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-//     express_TF16(
-//         cublasH, dA_psd, n, 0
-//     );
+    express_TF16(
+        cublasH, dA_psd, n, 0
+    );
 
-//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
 
-//     CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUDA(cudaDeviceSynchronize());
 
-//     return std::chrono::high_resolution_clock::now() - start;
-// }
+    return std::chrono::high_resolution_clock::now() - start;
+}
 
 void haoyu_TF16(
     cublasHandle_t cublasH,
@@ -1961,44 +1956,44 @@ void haoyu_TF16(
     return;
 }
 
-// std::chrono::duration<double> haoyu_TF16_psd(
-//     cusolverDnHandle_t solverH, cublasHandle_t cublasH, 
-//     const double* dA_orig, double* dA_psd, size_t n
-// ) {
-//     auto start = std::chrono::high_resolution_clock::now();
-//     size_t nn = n * n;
+std::chrono::duration<double> haoyu_TF16_psd(
+    cusolverDnHandle_t solverH, cublasHandle_t cublasH, 
+    const double* dA_orig, double* dA_psd, size_t n
+) {
+    auto start = std::chrono::high_resolution_clock::now();
+    size_t nn = n * n;
     
-//     CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
 
-//     double lo, up;
-//     approximate_two_norm(
-//         cublasH, solverH, dA_psd, n, &lo, &up
-//     ); // TODO: we use a TF16 handle here but the computations are done in FP64
-//     // printf("lower bound: %5.4e, upper bound: %5.4e \n", lo, up);
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, dA_psd, n, &lo, &up
+    ); // TODO: we use a TF16 handle here but the computations are done in FP64
+    // printf("lower bound: %5.4e, upper bound: %5.4e \n", lo, up);
 
-//     // scale to have eigenvalues in [-1, 1]
-//     const double scale = up > 0.0 ? up : 1.0;
-//     // const double scale = 1.0f;
-//     // printf("scale: %5.4e \n", scale);
-//     const double inv_scale = 1.0/scale;
-//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    // const double scale = 1.0f;
+    // printf("scale: %5.4e \n", scale);results/
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-//     float *dA_psd_float;
-//     CHECK_CUDA(cudaMalloc(&dA_psd_float, nn*sizeof(float)));
-//     launch_convert_double_to_float(dA_psd, dA_psd_float, nn);
+    float *dA_psd_float;
+    CHECK_CUDA(cudaMalloc(&dA_psd_float, nn*sizeof(float)));
+    launch_convert_double_to_float(dA_psd, dA_psd_float, nn);
 
-//     haoyu_TF16(
-//         cublasH, dA_psd_float, n, 0
-//     );
+    haoyu_TF16(
+        cublasH, dA_psd_float, n, 0
+    );
 
-//     launch_convert_float_to_double(dA_psd_float, dA_psd, nn);
+    launch_convert_float_to_double(dA_psd_float, dA_psd, nn);
 
-//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
 
-//     CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUDA(cudaDeviceSynchronize());
 
-//     return std::chrono::high_resolution_clock::now() - start;
-// }
+    return std::chrono::high_resolution_clock::now() - start;
+}
 
 std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
@@ -2166,11 +2161,11 @@ int main(int argc, char* argv[]) {
     std::vector<size_t> instance_sizes;
     int restarts = 1;
     int gemm_restarts = 1;
-    std::string gemm_output_file = "gemm_results.csv";
-    std::string psd_output_file = "psd_results.csv";
+    std::string gemm_output_file = "results/gemm_results.csv";
+    std::string psd_output_file = "results/psd_results.csv";
 
     // check if the files are empty
-    std::ofstream gemm_file(gemm_output_file, std::ios_base::trunc); // TODO: CHANGE ME TO app
+    std::ofstream gemm_file(gemm_output_file, std::ios_base::app);
     if (gemm_file.tellp() == 0) {
         gemm_file << "dataset,n,method,time,relative_error\n";
     } else {
@@ -2178,7 +2173,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     gemm_file.close();
-    std::ofstream psd_file(psd_output_file, std::ios_base::trunc); // TODO: CHANGE ME TO app
+    std::ofstream psd_file(psd_output_file, std::ios_base::app);
     if (psd_file.tellp() == 0) {
         psd_file << "dataset,n,method,time,relative_error\n";
     } else {
@@ -2565,7 +2560,7 @@ int main(int argc, char* argv[]) {
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += composite_FP32_psd_deflate(solverH, cublasH, A, A_psd, n);
+                duration += composite_FP32_psd(solverH, cublasH, A, A_psd, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error
@@ -2590,7 +2585,7 @@ int main(int argc, char* argv[]) {
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += composite_FP32_psd_deflate(solverH, cublasH_TF32, A, A_psd, n); // same function, different cuBLAS handle
+                duration += composite_FP32_psd(solverH, cublasH_TF32, A, A_psd, n); // same function, different cuBLAS handle
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error
@@ -2615,7 +2610,7 @@ int main(int argc, char* argv[]) {
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += composite_TF16_psd_deflate(solverH, cublasH_TF16, A, A_psd, n);
+                duration += composite_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error
@@ -2639,7 +2634,7 @@ int main(int argc, char* argv[]) {
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += haoyu_TF16_psd_deflate(solverH, cublasH_TF16, A, A_psd, n);
+                duration += haoyu_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error

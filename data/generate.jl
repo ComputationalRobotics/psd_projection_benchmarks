@@ -32,8 +32,10 @@ end
 datasets, instance_sizes = parse_args(ARGS)
 
 open("data/bin/meta.log", "w") do meta
-    for dataset in datasets
-        for n in instance_sizes
+    for n in instance_sizes
+        for dataset in datasets
+            # print dataset and n
+            println("Generating dataset '$(dataset)' of size '$(n)'")
             if dataset == "squared"
                 A = rand(n, n)
                 A = (A + A') / 2
