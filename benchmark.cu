@@ -18,6 +18,8 @@
 
 #define RUN_PURE_TESTS false
 
+#define K_DEFLATE 30 // must be greater than 0, otherwise use non-deflate versions
+
 void load_matrix(const std::string& filename, std::vector<double>& data, const int64_t instance_size) {
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
@@ -462,13 +464,23 @@ void express_FP32(
     //     {3.5078327656, -2.5842490196, 0.5067413449},
     //     {2.5075511932, -1.8485442400, 0.4358045161}
     // };
-    std::vector<std::vector<float>> coeff = { 
-        { 8.3885353390, -23.7796270883, 16.8664591580 }, 
-        { 4.1636476423, -2.9650849331, 0.5297319805 }, 
-        { 4.0042650581, -2.8606348801, 0.5185227850 }, 
-        { 3.4731017481, -2.5082466382, 0.4821470022 }, 
-        { 2.4827239537, -1.7941788274, 0.4146530436 }, 
-    };
+    // const std::vector<std::vector<float>> coeff = { 
+    //     { 8.3885353390, -23.7796270883, 16.8664591580 }, 
+    //     { 4.1636476423, -2.9650849331, 0.5297319805 }, 
+    //     { 4.0042650581, -2.8606348801, 0.5185227850 }, 
+    //     { 3.4731017481, -2.5082466382, 0.4821470022 }, 
+    //     { 2.4827239537, -1.7941788274, 0.4146530436 }, 
+    // }; const size_t smoothing_steps = 3;
+    const std::vector<std::vector<float>> coeff = { 
+        { 8.5018632351, -24.6330845767, 17.8466614026 },
+        { 4.2394319792, -3.0803745982, 0.5596805290 },
+        { 4.2371780379, -3.0779047407, 0.5594995022 },
+        { 4.1553447421, -3.0255808203, 0.5534594007 },
+        { 3.8719053120, -2.8289969308, 0.5331377564 },
+        { 3.0503282930, -2.2392300982, 0.4703818765 },
+        { 2.1450160790, -1.4976204044, 0.3936105784 }
+    }; const size_t smoothing_steps = 4;
+    
 
     /* Approximation of the step function */
     for (int i = 0; i < coeff.size(); i++) {
@@ -501,7 +513,7 @@ void express_FP32(
     }
 
     /* Smoothing function */
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < smoothing_steps; i++) {
         // A2 = A * A
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
 
@@ -551,128 +563,128 @@ void express_FP32(
     CHECK_CUDA( cudaFree(A3) );
 }
 
-void express_FP64(
-    cublasHandle_t cublasH,
-    double* mat,
-    const int n,
-    const int mat_offset = 0
-) {
-    const int nn = n * n;
+// void express_FP64(
+//     cublasHandle_t cublasH,
+//     double* mat,
+//     const int n,
+//     const int mat_offset = 0
+// ) {
+//     const int nn = n * n;
 
-    /* Allocations */
-    // device memory
-    double *A, *A2, *A3, *A5, *I, *Wout;
-    CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(&A5, nn * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(&I,  nn * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(&Wout,  nn * sizeof(double)) );
+//     /* Allocations */
+//     // device memory
+//     double *A, *A2, *A3, *A5, *I, *Wout;
+//     CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(double)) );
+//     CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(double)) );
+//     CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(double)) );
+//     CHECK_CUDA( cudaMalloc(&A5, nn * sizeof(double)) );
+//     CHECK_CUDA( cudaMalloc(&I,  nn * sizeof(double)) );
+//     CHECK_CUDA( cudaMalloc(&Wout,  nn * sizeof(double)) );
 
-    // useful constants
-    const double half       =  0.5;
-    const double minus_half = -0.5;
-    const double one        =  1.0;
-    const double one_n_half =  1.5;
-    const double zero       =  0.0;
+//     // useful constants
+//     const double half       =  0.5;
+//     const double minus_half = -0.5;
+//     const double one        =  1.0;
+//     const double one_n_half =  1.5;
+//     const double zero       =  0.0;
 
-    // build identity I on device
-    std::vector<double> I_h(nn, 0.0);
-    for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0;
-    CHECK_CUDA( cudaMemcpy(I, I_h.data(), nn * sizeof(double), H2D) );
+//     // build identity I on device
+//     std::vector<double> I_h(nn, 0.0);
+//     for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0;
+//     CHECK_CUDA( cudaMemcpy(I, I_h.data(), nn * sizeof(double), H2D) );
 
-    CHECK_CUDA( cudaMemcpy(A, mat + mat_offset, nn * sizeof(double), D2D) );
+//     CHECK_CUDA( cudaMemcpy(A, mat + mat_offset, nn * sizeof(double), D2D) );
 
-    /* Coefficients */
-    std::vector<std::vector<double>> coeff = {
-        {8.4724206924, -24.5001735687, 17.7268180847},
-        {4.2052841187, -3.0549299717, 0.5567536354},
-        {4.0443077087, -2.9473149776, 0.5449726582},
-        {3.5078327656, -2.5842490196, 0.5067413449},
-        {2.5075511932, -1.8485442400, 0.4358045161}
-    };
+//     /* Coefficients */
+//     std::vector<std::vector<double>> coeff = {
+//         {8.4724206924, -24.5001735687, 17.7268180847},
+//         {4.2052841187, -3.0549299717, 0.5567536354},
+//         {4.0443077087, -2.9473149776, 0.5449726582},
+//         {3.5078327656, -2.5842490196, 0.5067413449},
+//         {2.5075511932, -1.8485442400, 0.4358045161}
+//     };
 
-    /* Approximation of the step function */
-    for (int i = 0; i < coeff.size(); i++) {
-        const double a = coeff[i][0];
-        const double b = coeff[i][1];
-        const double c = coeff[i][2];
+//     /* Approximation of the step function */
+//     for (int i = 0; i < coeff.size(); i++) {
+//         const double a = coeff[i][0];
+//         const double b = coeff[i][1];
+//         const double c = coeff[i][2];
 
-        /* Compute the powers of A*/
-        // A2 = A * A
-        CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
+//         /* Compute the powers of A*/
+//         // A2 = A * A
+//         CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
 
-        // A3 = A2 * A
-        CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
+//         // A3 = A2 * A
+//         CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
 
-        // A5 = A3 * A2
-        CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A3, n, A2, n, &zero, A5, n) );
+//         // A5 = A3 * A2
+//         CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A3, n, A2, n, &zero, A5, n) );
 
-        /* Symmetrize A3, A5 */
-        symmetrizeDouble(cublasH, A3, n, A2); // we use A2 as a workspace
-        symmetrizeDouble(cublasH, A5, n, A2); // we use A2 as a workspace
+//         /* Symmetrize A3, A5 */
+//         symmetrizeDouble(cublasH, A3, n, A2); // we use A2 as a workspace
+//         symmetrizeDouble(cublasH, A5, n, A2); // we use A2 as a workspace
 
-        /* Compute A = a * A + b * A3 + c * A5 */
-        // A = a * A
-        CHECK_CUBLAS( cublasDscal(cublasH, nn, &a, A, 1) );
-        // A = b * A3 + A
-        CHECK_CUBLAS( cublasDaxpy(cublasH, nn, &b, A3, 1, A, 1) );
-        // A = c * A5 + A
-        CHECK_CUBLAS( cublasDaxpy(cublasH, nn, &c, A5, 1, A, 1) );
+//         /* Compute A = a * A + b * A3 + c * A5 */
+//         // A = a * A
+//         CHECK_CUBLAS( cublasDscal(cublasH, nn, &a, A, 1) );
+//         // A = b * A3 + A
+//         CHECK_CUBLAS( cublasDaxpy(cublasH, nn, &b, A3, 1, A, 1) );
+//         // A = c * A5 + A
+//         CHECK_CUBLAS( cublasDaxpy(cublasH, nn, &c, A5, 1, A, 1) );
 
-        /* Symmetrize A */
-        symmetrizeDouble(cublasH, A, n, A2); // we use A2 as a workspace
-    }
+//         /* Symmetrize A */
+//         symmetrizeDouble(cublasH, A, n, A2); // we use A2 as a workspace
+//     }
 
-    /* Smoothing function */
-    for (int i =0; i < 3; i++) {
-        // A2 = A * A
-        CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
+//     /* Smoothing function */
+//     for (int i =0; i < 3; i++) {
+//         // A2 = A * A
+//         CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
 
-        // A3 = A2 * A
-        CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
+//         // A3 = A2 * A
+//         CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
 
-        /* Symmetrize A3 */
-        symmetrizeDouble(cublasH, A3, n, A2); // we use A2 as a workspace
+//         /* Symmetrize A3 */
+//         symmetrizeDouble(cublasH, A3, n, A2); // we use A2 as a workspace
 
-        /* Compute A = 1.5 * A - 0.5 * A3 */
-        // A = 1.5 * A
-        CHECK_CUBLAS( cublasDscal(cublasH, nn, &one_n_half, A, 1) );
-        // A = -0.5 * A3 + A
-        CHECK_CUBLAS( cublasDaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
+//         /* Compute A = 1.5 * A - 0.5 * A3 */
+//         // A = 1.5 * A
+//         CHECK_CUBLAS( cublasDscal(cublasH, nn, &one_n_half, A, 1) );
+//         // A = -0.5 * A3 + A
+//         CHECK_CUBLAS( cublasDaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
 
-        /* Symmetrize A */
-        symmetrizeDouble(cublasH, A, n, A2); // we use A2 as a workspace
-    }
+//         /* Symmetrize A */
+//         symmetrizeDouble(cublasH, A, n, A2); // we use A2 as a workspace
+//     }
 
-    /* Compute A = (I + A)/2 */
-    // A = 1 * I + A
-    CHECK_CUBLAS( cublasDaxpy(cublasH, nn, &one, I, 1, A, 1) );
-    // A = 0.5 * A
-    CHECK_CUBLAS( cublasDscal(cublasH, nn, &half, A, 1) );
+//     /* Compute A = (I + A)/2 */
+//     // A = 1 * I + A
+//     CHECK_CUBLAS( cublasDaxpy(cublasH, nn, &one, I, 1, A, 1) );
+//     // A = 0.5 * A
+//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &half, A, 1) );
 
-    /* Symmetrize A */
-    symmetrizeDouble(cublasH, A, n, A2); // we use A2 as a workspace
+//     /* Symmetrize A */
+//     symmetrizeDouble(cublasH, A, n, A2); // we use A2 as a workspace
 
-    /* Multiply the original matrix by A */
-    // Wout = mat * A
-    CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, mat, n, A, n, &zero, Wout, n) );
+//     /* Multiply the original matrix by A */
+//     // Wout = mat * A
+//     CHECK_CUBLAS( cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, mat, n, A, n, &zero, Wout, n) );
 
-    /* Symmetrize W */
-    symmetrizeDouble(cublasH, Wout, n, A2); // we use A2 as a workspace
+//     /* Symmetrize W */
+//     symmetrizeDouble(cublasH, Wout, n, A2); // we use A2 as a workspace
 
-    /* Copy the result back to mat */
-    CHECK_CUDA( cudaMemcpy(mat + mat_offset, Wout, nn * sizeof(double), D2D) );
-    CHECK_CUDA( cudaDeviceSynchronize() );
+//     /* Copy the result back to mat */
+//     CHECK_CUDA( cudaMemcpy(mat + mat_offset, Wout, nn * sizeof(double), D2D) );
+//     CHECK_CUDA( cudaDeviceSynchronize() );
 
-    /* Free device memory */
-    CHECK_CUDA( cudaFree(A) );
-    CHECK_CUDA( cudaFree(A2) );
-    CHECK_CUDA( cudaFree(A3) );
-    CHECK_CUDA( cudaFree(A5) );
-    CHECK_CUDA( cudaFree(I) );
-    CHECK_CUDA( cudaFree(Wout) );
-}
+//     /* Free device memory */
+//     CHECK_CUDA( cudaFree(A) );
+//     CHECK_CUDA( cudaFree(A2) );
+//     CHECK_CUDA( cudaFree(A3) );
+//     CHECK_CUDA( cudaFree(A5) );
+//     CHECK_CUDA( cudaFree(I) );
+//     CHECK_CUDA( cudaFree(Wout) );
+// }
 
 __global__ void fill_random_kernel(double* vec, int n, unsigned long seed) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1209,8 +1221,8 @@ double compute_eigenpairs(
 std::chrono::duration<double> composite_FP32_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
     size_t nn = n * n;
-    size_t k = 40;
-    assert(n > 40);
+    size_t k = K_DEFLATE;
+    assert(n > k);
     
     CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
 
@@ -1991,8 +2003,8 @@ void haoyu_TF16(
 std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
     size_t nn = n * n;
-    size_t k = 40;
-    assert(n > 40);
+    size_t k = K_DEFLATE;
+    assert(n > k);
     
     CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
 
@@ -2064,8 +2076,8 @@ std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH,
 std::chrono::duration<double> composite_TF16_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
     size_t nn = n * n;
-    size_t k = 40;
-    assert(n > 40);
+    size_t k = K_DEFLATE;
+    assert(n > k);
     
     CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
 
@@ -2158,7 +2170,7 @@ int main(int argc, char* argv[]) {
     std::string psd_output_file = "psd_results.csv";
 
     // check if the files are empty
-    std::ofstream gemm_file(gemm_output_file, std::ios_base::app);
+    std::ofstream gemm_file(gemm_output_file, std::ios_base::trunc); // TODO: CHANGE ME TO app
     if (gemm_file.tellp() == 0) {
         gemm_file << "dataset,n,method,time,relative_error\n";
     } else {
@@ -2166,7 +2178,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     gemm_file.close();
-    std::ofstream psd_file(psd_output_file, std::ios_base::app);
+    std::ofstream psd_file(psd_output_file, std::ios_base::trunc); // TODO: CHANGE ME TO app
     if (psd_file.tellp() == 0) {
         psd_file << "dataset,n,method,time,relative_error\n";
     } else {
