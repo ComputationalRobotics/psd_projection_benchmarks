@@ -20,10 +20,9 @@ if __name__ == "__main__":
     df = df[df["n"] == n]
     # df = df[df["relative_error"] < 1e-3]
     df = df[df["dataset"].isin(datasets[:n_first_datasets])]
-    df = df[df["method"].isin(["cuSOLVER FP32", "composite FP32", "composite TF16", "haoyu TF16"])]
 
     sns.catplot(
-        data=df,
+        data=df[df["method"] != "cuSOLVER FP64"],
         x="dataset",
         y="relative_error",
         hue="method",
@@ -31,7 +30,7 @@ if __name__ == "__main__":
         kind="bar",
         # height=3,
         aspect=aspect,
-        # palette=sns.color_palette("hls", 8),
+        palette=sns.color_palette()[1:],
     )
     plt.ticklabel_format(style="sci", axis="y", scilimits=(0,0))
     plt.xlabel("Dataset")
@@ -49,7 +48,7 @@ if __name__ == "__main__":
         kind="bar",
         # height=3,
         aspect=aspect,
-        # palette=sns.color_palette("hls", 8),
+        palette=sns.color_palette(),
     )
     plt.xlabel("Dataset")
     plt.ylabel("Time (s)")
