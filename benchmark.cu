@@ -12,9 +12,8 @@
 #include <curand_kernel.h>
 #include <algorithm>
 
-#define D2H cudaMemcpyDeviceToHost
-#define H2D cudaMemcpyHostToDevice
-#define D2D cudaMemcpyDeviceToDevice
+#include "psd_projection/check.h"
+#include "psd_projection/utils.h"
 
 #define RUN_PURE_TESTS false
 
@@ -29,79 +28,6 @@ void load_matrix(const std::string& filename, std::vector<double>& data, const i
 
     data.resize(instance_size * instance_size);
     file.read(reinterpret_cast<char*>(data.data()), instance_size * instance_size * sizeof(double));
-}
-
-// Check if the function returns a CUDA error
-#define CHECK_CUDA(func)                                                       \
-do {                                                                           \
-    cudaError_t status = (func);                                               \
-    if (status != cudaSuccess) {                                               \
-        printf("CUDA API failed at %s:%d with error: %s (%d)",                 \
-               __FILE__, __LINE__, cudaGetErrorString(status), status);        \
-        std::cout << std::endl;                                                \
-    }                                                                          \
-} while (0) // wrap it in a do-while loop to be called with a semicolon
-
-// Check if the function returns a cuBLAS error
-#define CHECK_CUBLAS(func)                                                     \
-do {                                                                           \
-    cublasStatus_t status = (func);                                            \
-    if (status != CUBLAS_STATUS_SUCCESS) {                                     \
-        printf("cuBLAS error %d at %s:%d", status, __FILE__, __LINE__);        \
-        std::cout << std::endl;                                                \
-    }                                                                          \
-} while (0)
-
-// Check if the function returns a cuSPARSE error
-#define CHECK_CUSOLVER(func)                                                   \
-do {                                                                           \
-    cusolverStatus_t status = (func);                                          \
-    if (status != CUSOLVER_STATUS_SUCCESS) {                                   \
-        printf("cuSOLVER error %d at %s:%d", status, __FILE__, __LINE__);      \
-        std::cout << std::endl;                                                \
-    }                                                                          \
-} while (0)
-
-// Check if the function returns a cuSPARSE error
-#define CHECK_CUSPARSE(func)                                                   \
-{                                                                              \
-    cusparseStatus_t status = (func);                                          \
-    if (status != CUSPARSE_STATUS_SUCCESS) {                                   \
-        printf("cuSPARSE error %s (%d) at %s:%d",                              \
-              cusparseGetErrorString(status), status, __FILE__, __LINE__);     \
-        std::cout << std::endl;                                                \
-    }                                                                          \
-}
-
-// Kernel: convert double array to float array
-__global__ void convert_double_to_float(const double* in, float* out, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = static_cast<float>(in[idx]);
-    }
-}
-
-__global__ void convert_float_to_double(const float* in, double* out, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        out[idx] = static_cast<double>(in[idx]);
-    }
-}
-
-void launch_convert_double_to_float(const double* d_in, float* d_out, int n) {
-    const int threadsPerBlock = 1024;
-    const int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
-
-    convert_double_to_float<<<blocksPerGrid, threadsPerBlock>>>(d_in, d_out, n);
-    cudaDeviceSynchronize();  // Optional: ensures kernel finishes before returning
-}
-
-void launch_convert_float_to_double(const float* d_in, double* d_out, int n) {
-    const int threadsPerBlock = 1024;
-    const int blocksPerGrid = (n + threadsPerBlock - 1) / threadsPerBlock;
-
-    convert_float_to_double<<<blocksPerGrid, threadsPerBlock>>>(d_in, d_out, n);
-    cudaDeviceSynchronize();  // Optional: wait for completion
 }
 
 std::chrono::duration<double> cusolver_FP64_eig(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dW, double* dA, size_t n) {
@@ -242,38 +168,6 @@ std::chrono::duration<double> cusolver_FP64_psd(cusolverDnHandle_t solverH, cubl
 
 #include <iomanip>
 #include <assert.h>
-// Print an n×n matrix of doubles
-inline void printMatrixDouble(const double* dM, int n, int m = -1) {
-    // If m is not specified, use n for a square matrix
-    if (m == -1)
-        m = n;
-
-    size_t N = size_t(n) * m;
-    std::vector<double> hM(N);
-    CHECK_CUDA(cudaMemcpy(hM.data(), dM, N*sizeof(double), cudaMemcpyDeviceToHost));
-    for(int i = 0; i < n; ++i) {
-        for(int j = 0; j < m; ++j) {
-            std::cout << std::fixed << std::setprecision(6)
-                      << hM[j*n + i] << " ";
-        }
-        std::cout << "\n";
-    }
-    std::cout << std::endl;
-}
-
-inline void printMatrixFloat(const float* dM, int n) {
-    size_t N = size_t(n)*n;
-    std::vector<float> hM(N);
-    CHECK_CUDA(cudaMemcpy(hM.data(), dM, N*sizeof(float), cudaMemcpyDeviceToHost));
-    for(int i = 0; i < n; ++i) {
-        for(int j = 0; j < n; ++j) {
-            std::cout << std::fixed << std::setprecision(6)
-                      << hM[i*n + j] << " ";
-        }
-        std::cout << "\n";
-    }
-    std::cout << std::endl;
-}
 
 std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
@@ -357,105 +251,6 @@ std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cubl
     return std::chrono::high_resolution_clock::now() - start;
 }
 
-inline void symmetrizeFloat(
-    cublasHandle_t cublasH, float* M, int n, float* workspace
-) {
-    const float one = 1.0, half = 0.5, zero = 0.0;
-
-    // workspace = M^T
-    CHECK_CUBLAS(cublasSgeam(
-        cublasH, CUBLAS_OP_T, CUBLAS_OP_N,
-        n, n,
-        &one, M, n,
-        &zero, M, n,
-        workspace, n
-    ));
-
-    // M = M + workspace (which is M^T)
-    CHECK_CUBLAS(cublasSgeam(
-        cublasH, CUBLAS_OP_N, CUBLAS_OP_N,
-        n, n,
-        &one, M, n,
-        &one, workspace, n,
-        M, n
-    ));
-
-    // M = 0.5 * M
-    CHECK_CUBLAS(cublasSscal(cublasH, n * n, &half, M, 1));
-}
-
-inline void symmetrizeDouble(
-    cublasHandle_t cublasH, double* M, int n, double* workspace
-) {
-    const double one = 1.0, half = 0.5, zero = 0.0;
-
-    // workspace = M^T
-    CHECK_CUBLAS(cublasDgeam(
-        cublasH, CUBLAS_OP_T, CUBLAS_OP_N,
-        n, n,
-        &one, M, n,
-        &zero, M, n,
-        workspace, n
-    ));
-
-    // M = M + workspace (which is M^T)
-    CHECK_CUBLAS(cublasDgeam(
-        cublasH, CUBLAS_OP_N, CUBLAS_OP_N,
-        n, n,
-        &one, M, n,
-        &one, workspace, n,
-        M, n
-    ));
-
-    // M = 0.5 * M
-    CHECK_CUBLAS(cublasDscal(cublasH, n * n, &half, M, 1));
-}
-
-// __global__ void build_identity_kernel(float* mat, int n) {
-//     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (idx < n * n)
-//         mat[idx] = (idx / n == idx % n) ? 1.0f : 0.0f;
-// }
-
-// void build_identity(
-//     cublasHandle_t cublasH,
-//     float* mat,
-//     int n
-// ) {
-//     const int threadsPerBlock = 1024;
-//     const int blocksPerGrid = (n * n + threadsPerBlock - 1) / threadsPerBlock;
-
-//     // Launch kernel to build identity matrix
-//     build_identity_kernel<<<blocksPerGrid, threadsPerBlock>>>(mat, n);
-//     CHECK_CUDA(cudaGetLastError());
-//     CHECK_CUDA(cudaDeviceSynchronize());
-// }
-
-// Kernel to add identity matrix to a given matrix
-__global__ void add_identity_kernel(float* mat, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n * n) {
-        int row = idx / n;
-        int col = idx % n;
-        if (row == col) {
-            mat[idx] += 1.0f; // Add 1 to the diagonal elements
-        }
-    }
-}
-
-void add_identity(
-    cublasHandle_t cublasH,
-    float* mat,
-    int n
-) {
-    const int threadsPerBlock = 1024;
-    const int blocksPerGrid = (n * n + threadsPerBlock - 1) / threadsPerBlock;
-
-    // Launch kernel to add identity matrix
-    add_identity_kernel<<<blocksPerGrid, threadsPerBlock>>>(mat, n);
-    CHECK_CUDA(cudaGetLastError());
-}
-
 void express_FP32(
     cublasHandle_t cublasH,
     double* mat,
@@ -479,7 +274,7 @@ void express_FP32(
     const float zero       =  0.0f;
 
     /* Convert the initial matrix*/
-    launch_convert_double_to_float(mat + mat_offset, A, nn);
+    convert_double_to_float(mat + mat_offset, A, nn);
 
     /* Coefficients */
     // std::vector<std::vector<float>> coeff = {
@@ -574,14 +369,14 @@ void express_FP32(
 
     /* Multiply the original matrix by A */
     // W = A_origin * A
-    launch_convert_double_to_float(mat + mat_offset, A2, nn);
+    convert_double_to_float(mat + mat_offset, A2, nn);
     CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
 
     /* Symmetrize W */
     symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
 
     /* Copy the result back to mat */
-    launch_convert_float_to_double(A3, mat + mat_offset, nn);
+    convert_float_to_double(A3, mat + mat_offset, nn);
     CHECK_CUDA( cudaDeviceSynchronize() );
 
     /* Free device memory */
@@ -1494,7 +1289,7 @@ void express_TF16(
     const float zero       =  0.0f;
 
     // copy the float host matrix to the device
-    launch_convert_double_to_float(mat + mat_offset, A, nn);
+    convert_double_to_float(mat + mat_offset, A, nn);
 
     /* Coefficients */
     // std::vector<std::vector<float>> coeff = {
@@ -1618,7 +1413,7 @@ void express_TF16(
     CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
 
     /* Multiply the original matrix by A */
-    launch_convert_double_to_float(mat + mat_offset, A2, nn);
+    convert_double_to_float(mat + mat_offset, A2, nn);
     convertFloatToHalf4(A, hA, nn);
     convertFloatToHalf4(A2, hA2, nn);
     CHECK_CUBLAS(cublasGemmEx(
@@ -1636,7 +1431,7 @@ void express_TF16(
     symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
 
     /* Copy the result back to mat */
-    launch_convert_float_to_double(A3, mat + mat_offset, nn);
+    convert_float_to_double(A3, mat + mat_offset, nn);
     CHECK_CUDA( cudaDeviceSynchronize() );
 
     /* Free device memory */
@@ -1960,7 +1755,7 @@ std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cub
 //     const double inv_scale = 1.0/scale;
 //     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-//     launch_convert_double_to_float(
+//     convert_double_to_float(
 //         dA_psd, dA_f, n
 //     );
 
@@ -1968,7 +1763,7 @@ std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cub
 //         cublasH, dA_f, n, 0
 //     );
 
-//     launch_convert_float_to_double(
+//     convert_float_to_double(
 //         dA_f, dA_psd, n
 //     );
 
@@ -2236,13 +2031,13 @@ std::chrono::duration<double> haoyu_TF16_psd(
 
     float *dA_psd_float;
     CHECK_CUDA(cudaMalloc(&dA_psd_float, nn*sizeof(float)));
-    launch_convert_double_to_float(dA_psd, dA_psd_float, nn);
+    convert_double_to_float(dA_psd, dA_psd_float, nn);
 
     haoyu_TF16(
         cublasH, dA_psd_float, n, 0
     );
 
-    launch_convert_float_to_double(dA_psd_float, dA_psd, nn);
+    convert_float_to_double(dA_psd_float, dA_psd, nn);
 
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
 
@@ -2297,13 +2092,13 @@ std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH,
 
     float *dA_psd_float;
     CHECK_CUDA(cudaMalloc(&dA_psd_float, nn*sizeof(float)));
-    launch_convert_double_to_float(dA_psd, dA_psd_float, nn);
+    convert_double_to_float(dA_psd, dA_psd_float, nn);
 
     haoyu_TF16(
         cublasH, dA_psd_float, n, 0
     );
 
-    launch_convert_float_to_double(dA_psd_float, dA_psd, nn);
+    convert_float_to_double(dA_psd_float, dA_psd, nn);
 
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
 
@@ -2371,7 +2166,7 @@ std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH,
 //     float *dA_f;
 //     CHECK_CUDA(cudaMalloc(&dA_f, nn * sizeof(float)));
 
-//     launch_convert_double_to_float(
+//     convert_double_to_float(
 //         dA_psd, dA_f, n
 //     );
 
@@ -2379,7 +2174,7 @@ std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH,
 //         cublasH, dA_f, n, 0
 //     );
 
-//     launch_convert_float_to_double(
+//     convert_float_to_double(
 //         dA_f, dA_psd, n
 //     );
 

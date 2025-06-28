@@ -19,11 +19,11 @@ restarts=1
 gemmrestarts=1
 
 # build the psd_projection library
-export LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=psd_projection/build:$LD_LIBRARY_PATH
 cd psd_projection && cmake -S . -B build && cmake --build build && cd .. || exit 1
 
 # build the benchmark executable
-nvcc -std=c++17 -O3 -L. -Ipsd_projection/include -lcublas -lcudart -lcusolver -Wno-deprecated-gpu-targets -o benchmark benchmark.cu || exit 1
+nvcc -std=c++17 -O3 -L. -Lpsd_projection/build -lpsd_lib -Ipsd_projection/include -lcublas -lcudart -lcusolver -Wno-deprecated-gpu-targets -o benchmark benchmark.cu || exit 1
 
 # generate the datasets
 # julia data/generate.jl --datasets "${datasets[@]}" --instance_sizes "${instance_sizes[@]}" || exit 1
