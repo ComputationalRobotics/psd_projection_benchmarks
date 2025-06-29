@@ -19,6 +19,7 @@
 #include "psd_projection/lanczos.h"
 #include "psd_projection/express_FP32.h"
 #include "psd_projection/express_TF16.h"
+#include "psd_projection/haoyu_TF16.h"
 
 #define RUN_PURE_TESTS false
 
@@ -612,236 +613,6 @@ std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cub
     return std::chrono::high_resolution_clock::now() - start;
 }
 
-void haoyu_TF16(
-    cublasHandle_t cublasH,
-    float* mat,
-    const int n,
-    const int mat_offset
-) {
-    const int nn = n * n;
-
-    // 3) Allocate device buffers
-    float *dA_our, *dTmp, *dI, *dT1, *dT2, *dF, *dDiff;
-    // CHECK_CUDA(cudaMalloc(&dA_orig, nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dA_our,  nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dTmp,    nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dI,      nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dT1,     nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dT2,     nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dF,      nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dDiff,   nn*sizeof(float)));    
-
-    // 4) Copy host to device
-    CHECK_CUDA(cudaMemcpy(dA_our, mat, nn*sizeof(float), D2D));
-    // 5) Build identity I on device
-    std::vector<float> I_h(nn, 0.0f);
-    for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0f;
-    CHECK_CUDA(cudaMemcpy(dI, I_h.data(), nn*sizeof(float), cudaMemcpyHostToDevice));
-
-    // half buffers
-    __half *dT3_half, *dT4_half; 
-    CHECK_CUDA(cudaMalloc(&dT3_half, nn*sizeof(__half))); 
-    CHECK_CUDA(cudaMalloc(&dT4_half, nn*sizeof(__half)));
-
-    const float one = 1.0f, zero = 0.0f, neg1 = -1.0f;
-    float half = 0.5f;
-    // 6) Iterative algorithm in float, printing after each iter
-
-    // size_t threads=1024, blocks=(nn+threads-1)/threads;
-
-    // printf("Start solving haoyu! \n");
-    // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
-    auto start = std::chrono::high_resolution_clock::now();
-    for (int iter = 1; iter <= 7; iter++) {
-        // T1 = A_our * A_our
-        // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
-        convert_float_to_half4(dA_our, dT3_half, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            dT3_half, CUDA_R_16F, n,
-            dT3_half, CUDA_R_16F, n,
-            &zero,
-            dT1,    CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-        // CHECK_CUDA(cudaDeviceSynchronize());
-        // printMatrixHalf(dT3_half, n);
-        // printMatrixFloat(dT1, n);
-
-        // T2 = I - T1
-        CHECK_CUBLAS(cublasSgeam(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n,
-            &one,  dI,  n,
-            &neg1, dT1, n,
-            dT2,       n));
-        // T1 = T2 * T2
-        // float2half_kernel<<<blocks,threads>>>(dT2, dT3_half, nn);
-        convert_float_to_half4(dT2, dT3_half, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            dT3_half, CUDA_R_16F, n,
-            dT3_half, CUDA_R_16F, n,
-            &zero,
-            dT1, CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-        // CHECK_CUDA(cudaDeviceSynchronize());
-        // printMatrixHalf(dT3_half, n);
-        // printMatrixFloat(dT1, n);
-
-        // F = I + log(iter+10)*T1
-        float logv = std::log(iter + 10.0f);
-        CHECK_CUBLAS(cublasSgeam(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n,
-            &one,  dI,  n,
-            &logv, dT1, n,
-            dF,      n));
-        
-        // CHECK_CUDA(cudaDeviceSynchronize());
-        // printMatrixFloat(dF, n);
-
-        // A_our = A_our * F (to dTmp, then copy back)
-        // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
-        // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
-        convert_float_to_half4(dA_our, dT3_half, nn);
-        convert_float_to_half4(dF, dT4_half, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            dT3_half, CUDA_R_16F, n,
-            dT4_half, CUDA_R_16F, n,
-            &zero,
-            dTmp,   CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-        // CHECK_CUDA(cudaDeviceSynchronize());
-        // printMatrixHalf(dT3_half, n);
-        // printMatrixHalf(dT4_half, n);
-        // printMatrixFloat(dTmp, n);
-        
-        CHECK_CUDA(cudaMemcpy(dA_our, dTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
-        // T1 = A_our^2, T2 = I - T1
-        // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
-        convert_float_to_half4(dA_our, dT3_half, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            dT3_half, CUDA_R_16F, n,
-            dT3_half, CUDA_R_16F, n,
-            &zero,
-            dT1,    CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-        // CHECK_CUDA(cudaDeviceSynchronize());
-        // printMatrixHalf(dT3_half, n);
-        // printMatrixFloat(dT1, n);
-
-        CHECK_CUBLAS(cublasSgeam(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n,
-            &one,  dI,  n,
-            &neg1, dT1, n,
-            dT2,       n));
-        // F = I + (1/sqrt(iter))*T2
-        float invs = 1.0f / std::sqrt((float)iter);
-        CHECK_CUBLAS(cublasSgeam(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n,
-            &one,  dI,  n,
-            &invs, dT2, n,
-            dF,      n));
-        // A_our = A_our * F (to dTmp)
-        // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
-        // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
-        convert_float_to_half4(dA_our, dT3_half, nn);
-        convert_float_to_half4(dF, dT4_half, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            dT3_half, CUDA_R_16F, n,
-            dT4_half, CUDA_R_16F, n,
-            &zero,
-            dTmp,   CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-        
-        // CHECK_CUDA(cudaDeviceSynchronize());
-        // printMatrixHalf(dT3_half, n);
-        // printMatrixHalf(dT4_half, n);
-        // printMatrixFloat(dTmp, n);
-
-        // A_our <-- Tmp
-        CHECK_CUDA(cudaMemcpy(dA_our, dTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
-
-        // force symmetry: A_our <-- 0.5 * (A_our + Tmp')
-        CHECK_CUBLAS(cublasSgeam(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_T,
-            n, n,
-            &half, dA_our, n,
-            &half, dTmp, n,
-            dA_our, n));
-
-        // Compute Frobenius norm ||A_our||_F
-        float fro_err = 0.0f;
-        CHECK_CUBLAS(cublasSnrm2(cublasH, nn, dA_our, 1, &fro_err));
-
-        // printf("Iter: %d | Fro norm = %.10f \n", iter, fro_err);
-
-        // std::cout << std::fixed << std::setprecision(10);
-        // std::cout << "Iter " << iter
-        //           << " | Fro norm = " << fro_err << "\n";
-    }
-    // 7) Final combine: mat = mat * (A_our + I) / 2
-    CHECK_CUBLAS(cublasSgeam(
-        cublasH,
-        CUBLAS_OP_N, CUBLAS_OP_N,
-        n, n,
-        &one, dA_our, n,
-        &one, dI,     n,
-        dF,            n));
-    // float2half_kernel<<<blocks,threads>>>(dA_orig, dT3_half, nn);
-    // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
-    convert_float_to_half4(mat, dT3_half, nn);
-    convert_float_to_half4(dF, dT4_half, nn);
-    CHECK_CUBLAS(cublasGemmEx(
-        cublasH,
-        CUBLAS_OP_N, CUBLAS_OP_N,
-        n, n, n,
-        &one,
-        dT3_half, CUDA_R_16F, n,
-        dT4_half, CUDA_R_16F, n,
-        &zero,
-        dTmp,    CUDA_R_32F, n,
-        CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-    CHECK_CUDA(cudaMemcpy(mat, dTmp, nn*sizeof(float), D2D));
-    CHECK_CUBLAS(cublasSscal(cublasH, nn, &half, mat, 1));
-    
-    CHECK_CUDA(cudaDeviceSynchronize());
-
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<float> elapsed = end - start;
-    // std::cout << "Total time: " << elapsed.count() << " seconds\n";
-    return;
-}
-
 std::chrono::duration<double> haoyu_TF16_psd(
     cusolverDnHandle_t solverH, cublasHandle_t cublasH, 
     const double* dA_orig, double* dA_psd, size_t n
@@ -868,9 +639,7 @@ std::chrono::duration<double> haoyu_TF16_psd(
     CHECK_CUDA(cudaMalloc(&dA_psd_float, nn*sizeof(float)));
     convert_double_to_float(dA_psd, dA_psd_float, nn);
 
-    haoyu_TF16(
-        cublasH, dA_psd_float, n, 0
-    );
+    haoyu_TF16(cublasH, dA_psd_float, n);
 
     convert_float_to_double(dA_psd_float, dA_psd, nn);
 
@@ -902,11 +671,6 @@ std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH,
     std::vector<double> eigenvalues_host(r);
     CHECK_CUDA( cudaMemcpy(eigenvalues_host.data(), eigenvalues, r * sizeof(double), D2H) );
 
-    // double lo, up;
-    // approximate_two_norm(
-    //     cublasH, solverH, dA_psd, n, &lo, &up
-    // ); // TODO: sometimes we use a TF32 handle here but the computations are done in FP64
-
     /* Step 2: remove the largest eigenvalues from the matrix */
     for (int i = 0; i < r; i++) {
         // X <- X - \lambda_i * v_i v_i^T
@@ -929,9 +693,7 @@ std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH,
     CHECK_CUDA(cudaMalloc(&dA_psd_float, nn*sizeof(float)));
     convert_double_to_float(dA_psd, dA_psd_float, nn);
 
-    haoyu_TF16(
-        cublasH, dA_psd_float, n, 0
-    );
+    haoyu_TF16(cublasH, dA_psd_float, n);
 
     convert_float_to_double(dA_psd_float, dA_psd, nn);
 
@@ -974,11 +736,6 @@ std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH,
 
 //     std::vector<double> eigenvalues_host(r);
 //     CHECK_CUDA( cudaMemcpy(eigenvalues_host.data(), eigenvalues, r * sizeof(double), D2H) );
-
-//     // double lo, up;
-//     // approximate_two_norm(
-//     //     cublasH, solverH, dA_psd, n, &lo, &up
-//     // ); // TODO: sometimes we use a TF32 handle here but the computations are done in FP64
 
 //     /* Step 2: remove the largest eigenvalues from the matrix */
 //     for (int i = 0; i < r; i++) {
