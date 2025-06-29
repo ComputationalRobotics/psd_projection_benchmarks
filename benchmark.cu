@@ -646,6 +646,7 @@ std::chrono::duration<double> haoyu_TF16_psd(
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
 
     CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUDA(cudaFree(dA_psd_float));
 
     return std::chrono::high_resolution_clock::now() - start;
 }
