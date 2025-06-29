@@ -11,10 +11,14 @@
 #include <chrono>
 #include <curand_kernel.h>
 #include <algorithm>
+#include <iomanip>
+#include <assert.h>
 
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 #include "psd_projection/lanczos.h"
+#include "psd_projection/express_FP32.h"
+#include "psd_projection/express_TF16.h"
 
 #define RUN_PURE_TESTS false
 
@@ -64,14 +68,8 @@ std::chrono::duration<double> cusolver_FP32_eig(cusolverDnHandle_t solverH, cubl
     // convert dA from double to float
     float *sA;
     CHECK_CUDA(cudaMalloc(&sA, nn*sizeof(float)));
-    
-    std::vector<double> A_h_d(nn);
-    CHECK_CUDA(cudaMemcpy(A_h_d.data(), dA, nn*sizeof(double), D2H));
-    std::vector<float> A_h(nn);
-    for (size_t i = 0; i < nn; i++) {
-        A_h[i] = static_cast<float>(A_h_d[i]);
-    }
-    CHECK_CUDA(cudaMemcpy(sA, A_h.data(), nn*sizeof(float), H2D));
+
+    convert_double_to_float(dA_orig, sA, nn);
 
     float *sW; CHECK_CUDA(cudaMalloc(&sW, n*sizeof(float)));
     int lwork_ev = 0;
@@ -88,13 +86,7 @@ std::chrono::duration<double> cusolver_FP32_eig(cusolverDnHandle_t solverH, cubl
     CHECK_CUDA(cudaDeviceSynchronize());
 
     // Convert sA back to double
-    std::vector<double> dA_h(nn);
-    std::vector<float> sA_h(nn);
-    CHECK_CUDA(cudaMemcpy(sA_h.data(), sA, nn*sizeof(float), D2H));
-    for (size_t i = 0; i < nn; i++) {
-        dA_h[i] = static_cast<double>(sA_h[i]);
-    }
-    CHECK_CUDA(cudaMemcpy(dA, dA_h.data(), nn*sizeof(double), H2D));
+   convert_float_to_double(sA, dA, nn);
 
     // Cleanup
     CHECK_CUDA(cudaFree(sWork_ev));
@@ -166,9 +158,6 @@ std::chrono::duration<double> cusolver_FP64_psd(cusolverDnHandle_t solverH, cubl
 
     return std::chrono::high_resolution_clock::now() - start;
 }
-
-#include <iomanip>
-#include <assert.h>
 
 std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
@@ -252,139 +241,6 @@ std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cubl
     return std::chrono::high_resolution_clock::now() - start;
 }
 
-void express_FP32(
-    cublasHandle_t cublasH,
-    double* mat,
-    const int n,
-    const int mat_offset
-) {
-    const int nn = n * n;
-
-    /* Allocations */
-    // device memory
-    float *A, *A2, *A3;
-    CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
-
-    // useful constants
-    const float half       =  0.5f;
-    const float minus_half = -0.5f;
-    const float one        =  1.0f;
-    const float one_n_half =  1.5f;
-    const float zero       =  0.0f;
-
-    /* Convert the initial matrix*/
-    convert_double_to_float(mat + mat_offset, A, nn);
-
-    /* Coefficients */
-    // std::vector<std::vector<float>> coeff = {
-    //     {8.4724206924, -24.5001735687, 17.7268180847},
-    //     {4.2052841187, -3.0549299717, 0.5567536354},
-    //     {4.0443077087, -2.9473149776, 0.5449726582},
-    //     {3.5078327656, -2.5842490196, 0.5067413449},
-    //     {2.5075511932, -1.8485442400, 0.4358045161}
-    // };
-    // const std::vector<std::vector<float>> coeff = { 
-    //     { 8.3885353390, -23.7796270883, 16.8664591580 }, 
-    //     { 4.1636476423, -2.9650849331, 0.5297319805 }, 
-    //     { 4.0042650581, -2.8606348801, 0.5185227850 }, 
-    //     { 3.4731017481, -2.5082466382, 0.4821470022 }, 
-    //     { 2.4827239537, -1.7941788274, 0.4146530436 }, 
-    // }; const size_t smoothing_steps = 3;
-    const std::vector<std::vector<float>> coeff = { 
-        { 8.5018632351, -24.6330845767, 17.8466614026 },
-        { 4.2394319792, -3.0803745982, 0.5596805290 },
-        { 4.2371780379, -3.0779047407, 0.5594995022 },
-        { 4.1553447421, -3.0255808203, 0.5534594007 },
-        { 3.8719053120, -2.8289969308, 0.5331377564 },
-        { 3.0503282930, -2.2392300982, 0.4703818765 },
-        { 2.1450160790, -1.4976204044, 0.3936105784 }
-    }; const size_t smoothing_steps = 4;
-    
-
-    /* Approximation of the step function */
-    for (int i = 0; i < coeff.size(); i++) {
-        const float a = coeff[i][0];
-        const float b = coeff[i][1];
-        const float c = coeff[i][2];
-
-        /* Compute the powers of A*/
-        // A2 = A * A
-        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
-
-        // A3 = A2 * A
-        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
-
-        // A = a * A
-        CHECK_CUBLAS( cublasSscal(cublasH, nn, &a, A, 1) );
-        // A = b * A3 + A
-        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &b, A3, 1, A, 1) );
-        // at this point, A = a * A + b * A3
-
-        /* Symmetrize A3, A5 */
-        // symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-        // symmetrizeFloat(cublasH, A5, n, A2); // we use A2 as a workspace
-
-        // A = c * A3 * A2 + A
-        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &c, A3, n, A2, n, &one, A, n) );
-
-        /* Symmetrize A */
-        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
-    }
-
-    /* Smoothing function */
-    for (int i = 0; i < smoothing_steps; i++) {
-        // A2 = A * A
-        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
-
-        // A3 = A2 * A
-        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
-
-        /* Symmetrize A3 */
-        symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-
-        /* Compute A = 1.5 * A - 0.5 * A3 */
-        // A = 1.5 * A
-        CHECK_CUBLAS( cublasSscal(cublasH, nn, &one_n_half, A, 1) );
-        // A = -0.5 * A3 + A
-        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
-
-        /* Symmetrize A */
-        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
-    }
-
-    /* Compute A = (I + A)/2 */
-    // build I on device and store it in A2
-    // build_identity(cublasH, A2, n);
-
-    // A = 1 * I + A
-    // CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &one, A2, 1, A, 1) );
-
-    add_identity(cublasH, A, n);
-    // A = 0.5 * A
-    CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
-
-    /* Symmetrize A */
-    // symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
-
-    /* Multiply the original matrix by A */
-    // W = A_origin * A
-    convert_double_to_float(mat + mat_offset, A2, nn);
-    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
-
-    /* Symmetrize W */
-    symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-
-    /* Copy the result back to mat */
-    convert_float_to_double(A3, mat + mat_offset, nn);
-    CHECK_CUDA( cudaDeviceSynchronize() );
-
-    /* Free device memory */
-    CHECK_CUDA( cudaFree(A) );
-    CHECK_CUDA( cudaFree(A2) );
-    CHECK_CUDA( cudaFree(A3) );
-}
 
 // void express_FP64(
 //     cublasHandle_t cublasH,
@@ -681,34 +537,6 @@ std::chrono::duration<double> FP32_gemm(cublasHandle_t cublasH, const double* dA
     return (std::chrono::high_resolution_clock::now() - start) / static_cast<double>(gemm_restarts);
 }
 
-__global__ void float4_to_half_kernel(
-    const float4* __restrict__ A4,
-    __half2 * __restrict__ B2,
-    size_t N4
-) {
-    size_t idx = blockIdx.x*blockDim.x + threadIdx.x;
-    if (idx >= N4) return;
-
-    // load 4 floats
-    float4 v = A4[idx];
-
-    // pack low two floats into half2
-    B2[2*idx + 0] = __float22half2_rn(make_float2(v.x, v.y));
-    // pack high two floats into half2
-    B2[2*idx + 1] = __float22half2_rn(make_float2(v.z, v.w));
-}
-
-void convertFloatToHalf4(const float* dA, __half* dB, size_t N) {
-    size_t N4 = (N + 3)/4;  // how many float4’s
-    auto A4 = reinterpret_cast<const float4*>(dA);
-    auto B2 = reinterpret_cast<__half2*>(dB);
-
-    const int blk = 1024;
-    int grid = (N4 + blk - 1)/blk;
-    float4_to_half_kernel<<<grid,blk>>>(A4, B2, N4);
-    // cudaDeviceSynchronize();
-}
-
 std::chrono::duration<double> TF16_gemm(cublasHandle_t cublasH, const double* dA_orig, double* dA2, size_t n, int gemm_restarts) {
     auto start = std::chrono::high_resolution_clock::now();
     float one = 1.0;
@@ -728,7 +556,7 @@ std::chrono::duration<double> TF16_gemm(cublasHandle_t cublasH, const double* dA
 
     __half *hA; 
     CHECK_CUDA(cudaMalloc(&hA, nn*sizeof(__half)));
-    convertFloatToHalf4(sA, hA, nn);
+    convert_float_to_half4(sA, hA, nn);
 
     for (int i = 0; i < gemm_restarts; i++) {
         CHECK_CUBLAS(cublasGemmEx(
@@ -755,189 +583,6 @@ std::chrono::duration<double> TF16_gemm(cublasHandle_t cublasH, const double* dA
     CHECK_CUDA( cudaFree(hA) );
 
     return (std::chrono::high_resolution_clock::now() - start) / static_cast<double>(gemm_restarts);
-}
-
-void express_TF16(
-    cublasHandle_t cublasH,
-    double* mat,
-    const int n,
-    const int mat_offset
-) {
-    const int nn = n * n;
-
-    /* Allocations */
-    // device memory
-    float *A, *A2, *A3;
-    CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
-
-    __half *hA, *hA2, *hA3;
-    CHECK_CUDA(cudaMalloc(&hA,  nn * sizeof(__half)));
-    CHECK_CUDA(cudaMalloc(&hA2, nn * sizeof(__half)));
-    CHECK_CUDA(cudaMalloc(&hA3, nn * sizeof(__half)));
-
-    // useful constants
-    const float half       =  0.5f;
-    const float minus_half = -0.5f;
-    const float one        =  1.0f;
-    const float one_n_half =  1.5f;
-    const float zero       =  0.0f;
-
-    // copy the float host matrix to the device
-    convert_double_to_float(mat + mat_offset, A, nn);
-
-    /* Coefficients */
-    // std::vector<std::vector<float>> coeff = {
-    //     {8.4724206924, -24.5001735687, 17.7268180847},
-    //     {4.2052841187, -3.0549299717, 0.5567536354},
-    //     {4.0443077087, -2.9473149776, 0.5449726582},
-    //     {3.5078327656, -2.5842490196, 0.5067413449},
-    //     {2.5075511932, -1.8485442400, 0.4358045161}
-    // };
-    std::vector<std::vector<float>> coeff = { 
-        { 8.3885353390, -23.7796270883, 16.8664591580 }, 
-        { 4.1636476423, -2.9650849331, 0.5297319805 }, 
-        { 4.0042650581, -2.8606348801, 0.5185227850 }, 
-        { 3.4731017481, -2.5082466382, 0.4821470022 }, 
-        { 2.4827239537, -1.7941788274, 0.4146530436 }, 
-    };
-
-    /* Approximation of the step function */
-    for (int i = 0; i < coeff.size(); i++) {
-        const float a = coeff[i][0];
-        const float b = coeff[i][1];
-        const float c = coeff[i][2];
-
-        /* Compute the powers of A*/
-        // A2 = A * A
-        convertFloatToHalf4(A, hA, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            hA, CUDA_R_16F, n,
-            hA, CUDA_R_16F, n,
-            &zero,
-            A2,    CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-        // A3 = A2 * A
-        convertFloatToHalf4(A2, hA2, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            hA, CUDA_R_16F, n,
-            hA2, CUDA_R_16F, n,
-            &zero,
-            A3,    CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-        // A = a * A
-        CHECK_CUBLAS( cublasSscal(cublasH, nn, &a, A, 1) );
-        // A = b * A3 + A
-        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &b, A3, 1, A, 1) );
-        // at this point, A = a * A + b * A3
-
-        /* Symmetrize A3, A5 */
-        // symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-        // symmetrizeFloat(cublasH, A5, n, A2); // we use A2 as a workspace
-
-        // A = c * A3 * A2 + A
-        convertFloatToHalf4(A3, hA3, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &c,
-            hA2, CUDA_R_16F, n,
-            hA3, CUDA_R_16F, n,
-            &one,
-            A,    CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-        /* Symmetrize A */
-        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
-    }
-
-    /* Smoothing function */
-    for (int i = 0; i < 3; i++) {
-        // A2 = A * A
-        convertFloatToHalf4(A, hA, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            hA, CUDA_R_16F, n,
-            hA, CUDA_R_16F, n,
-            &zero,
-            A2,    CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-        // A3 = A2 * A
-        convertFloatToHalf4(A2, hA2, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            hA, CUDA_R_16F, n,
-            hA2, CUDA_R_16F, n,
-            &zero,
-            A3,    CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-        /* Symmetrize A3 */
-        symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-
-        /* Compute A = 1.5 * A - 0.5 * A3 */
-        // A = 1.5 * A
-        CHECK_CUBLAS( cublasSscal(cublasH, nn, &one_n_half, A, 1) );
-        // A = -0.5 * A3 + A
-        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
-
-        /* Symmetrize A */
-        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
-    }
-
-    add_identity(cublasH, A, n);
-    // A = 0.5 * A
-    CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
-
-    /* Multiply the original matrix by A */
-    convert_double_to_float(mat + mat_offset, A2, nn);
-    convertFloatToHalf4(A, hA, nn);
-    convertFloatToHalf4(A2, hA2, nn);
-    CHECK_CUBLAS(cublasGemmEx(
-        cublasH,
-        CUBLAS_OP_N, CUBLAS_OP_N,
-        n, n, n,
-        &one,
-        hA2, CUDA_R_16F, n,
-        hA, CUDA_R_16F, n,
-        &zero,
-        A3,    CUDA_R_32F, n,
-        CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-    /* Symmetrize W */
-    symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-
-    /* Copy the result back to mat */
-    convert_float_to_double(A3, mat + mat_offset, nn);
-    CHECK_CUDA( cudaDeviceSynchronize() );
-
-    /* Free device memory */
-    CHECK_CUDA( cudaFree(A) );
-    CHECK_CUDA( cudaFree(A2) );
-    CHECK_CUDA( cudaFree(A3) );
-    CHECK_CUDA( cudaFree(hA) );
-    CHECK_CUDA( cudaFree(hA2) );
-    CHECK_CUDA( cudaFree(hA3) );
-    CHECK_CUDA( cudaDeviceSynchronize() );
 }
 
 std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
@@ -967,310 +612,6 @@ std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cub
     return std::chrono::high_resolution_clock::now() - start;
 }
 
-// void express_TF16(
-//     cublasHandle_t cublasH,
-//     float* mat,
-//     const int n,
-//     const int mat_offset
-// ) {
-//     const int nn = n * n;
-
-//     /* Allocations */
-//     // device memory
-//     float *A, *A2, *A3, *A5, *I, *W, *Wout;
-//     CHECK_CUDA( cudaMalloc(&A,    nn * sizeof(float)) );
-//     CHECK_CUDA( cudaMalloc(&A2,   nn * sizeof(float)) );
-//     CHECK_CUDA( cudaMalloc(&A3,   nn * sizeof(float)) );
-//     CHECK_CUDA( cudaMalloc(&A5,   nn * sizeof(float)) );
-//     CHECK_CUDA( cudaMalloc(&I,    nn * sizeof(float)) );
-//     CHECK_CUDA( cudaMalloc(&W,    nn * sizeof(float)) );
-//     CHECK_CUDA( cudaMalloc(&Wout, nn * sizeof(float)) );
-
-//     __half *hA, *hA2, *hA3, *hW;
-//     CHECK_CUDA(cudaMalloc(&hA,  nn * sizeof(__half)));
-//     CHECK_CUDA(cudaMalloc(&hA2, nn * sizeof(__half)));
-//     CHECK_CUDA(cudaMalloc(&hA3, nn * sizeof(__half)));
-//     CHECK_CUDA(cudaMalloc(&hW,  nn * sizeof(__half)));
-
-//     // useful constants
-//     const float half       =  0.5f;
-//     const float one        =  1.0f;
-//     const float neg1       = -1.0f;
-//     const float zero       =  0.0f;
-
-//     // build identity I on device
-//     std::vector<float> I_h(nn, 0.0f);
-//     for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0f;
-//     CHECK_CUDA( cudaMemcpy(I, I_h.data(), nn * sizeof(float), H2D) );
-
-//     /* Convert the initial matrix*/
-//     // copy the float matrix back to the host
-
-//     // convert the host matrix to float
-//     // std::vector<float> A_h(nn);
-//     // for (int i = 0; i < nn; i++)
-//     //     A_h[i] = static_cast<float>(A_h_d[i]);
-
-//     // copy the float host matrix to the device
-//     CHECK_CUDA( cudaMemcpy(A, mat, nn * sizeof(float), D2D) );
-//     CHECK_CUDA( cudaMemcpy(W, mat, nn * sizeof(float), D2D) );
-
-//     /* Coefficients */
-//     // std::vector<std::vector<float>> coeff = {
-//     //     {8.4724206924, -24.5001735687, 17.7268180847},
-//     //     {4.2052841187, -3.0549299717, 0.5567536354},
-//     //     {4.0443077087, -2.9473149776, 0.5449726582},
-//     //     {3.5078327656, -2.5842490196, 0.5067413449},
-//     //     {2.5075511932, -1.8485442400, 0.4358045161}
-//     // };
-
-//     std::vector<std::vector<float>> coeff = { 
-//         { 8.3885353390, -23.7796270883, 16.8664591580 }, 
-//         { 4.1636476423, -2.9650849331, 0.5297319805 }, 
-//         { 4.0042650581, -2.8606348801, 0.5185227850 }, 
-//         { 3.4731017481, -2.5082466382, 0.4821470022 }, 
-//         { 2.4827239537, -1.7941788274, 0.4146530436 }, 
-//     };
-
-//     /* Approximation of the step function */
-//     for (int i = 0; i < coeff.size(); i++) {
-//         const float a = coeff[i][0];
-//         const float b = coeff[i][1];
-//         const float c = coeff[i][2];
-
-//         /* Compute the powers of A*/
-//         // A2 = A * A
-//         convertFloatToHalf4(A, hA, nn);
-//         CHECK_CUBLAS(cublasGemmEx(
-//             cublasH,
-//             CUBLAS_OP_N, CUBLAS_OP_N,
-//             n, n, n,
-//             &one,
-//             hA, CUDA_R_16F, n,
-//             hA, CUDA_R_16F, n,
-//             &zero,
-//             A2,    CUDA_R_32F, n,
-//             CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-//         // A3 = A2 * A
-//         convertFloatToHalf4(A2, hA2, nn);
-//         CHECK_CUBLAS(cublasGemmEx(
-//             cublasH,
-//             CUBLAS_OP_N, CUBLAS_OP_N,
-//             n, n, n,
-//             &one,
-//             hA, CUDA_R_16F, n,
-//             hA2, CUDA_R_16F, n,
-//             &zero,
-//             A3,    CUDA_R_32F, n,
-//             CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-//         // A5 = A3 * A2
-//         convertFloatToHalf4(A3, hA3, nn);
-//         CHECK_CUBLAS(cublasGemmEx(
-//             cublasH,
-//             CUBLAS_OP_N, CUBLAS_OP_N,
-//             n, n, n,
-//             &one,
-//             hA2, CUDA_R_16F, n,
-//             hA3, CUDA_R_16F, n,
-//             &zero,
-//             A5,    CUDA_R_32F, n,
-//             CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-//         /* Symmetrize A3, A5 */
-//         symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-//         symmetrizeFloat(cublasH, A5, n, A2); // we use A2 as a workspace
-
-//         /* Compute A = a * A + b * A3 + c * A5 */
-//         // A = a * A
-//         CHECK_CUBLAS( cublasSscal(cublasH, nn, &a, A, 1) );
-//         // A = b * A3 + A
-//         CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &b, A3, 1, A, 1) );
-//         // A = c * A5 + A
-//         CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &c, A5, 1, A, 1) );
-
-//         /* Symmetrize A */
-//         symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
-//     }
-
-//     /* Smoothing function */
-//     for (int i =1; i <= 3; i++) {
-//         // A2 = A * A
-//         convertFloatToHalf4(A, hA, nn);
-//         CHECK_CUBLAS(cublasGemmEx(
-//             cublasH,
-//             CUBLAS_OP_N, CUBLAS_OP_N,
-//             n, n, n,
-//             &one,
-//             hA, CUDA_R_16F, n,
-//             hA, CUDA_R_16F, n,
-//             &zero,
-//             A2,    CUDA_R_32F, n,
-//             CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-        
-//         // ---------------------------
-//         // A3 = I - A2
-//         CHECK_CUBLAS(cublasSgeam(
-//             cublasH,
-//             CUBLAS_OP_N, CUBLAS_OP_N,
-//             n, n,
-//             &one,  I,  n,
-//             &neg1, A2, n,
-//             A3,       n));
-
-//         // A2 = I + 0.5 * A3
-//         CHECK_CUBLAS(cublasSgeam(
-//             cublasH,
-//             CUBLAS_OP_N, CUBLAS_OP_N,
-//             n, n,
-//             &one,  I,  n,
-//             &half, A3, n,
-//             A2,       n));
-
-//         // A3 = A * A2
-//         convertFloatToHalf4(A2, hA2, nn);
-//         CHECK_CUBLAS(cublasGemmEx(
-//             cublasH,
-//             CUBLAS_OP_N, CUBLAS_OP_N,
-//             n, n, n,
-//             &one,
-//             hA, CUDA_R_16F, n,
-//             hA2, CUDA_R_16F, n,
-//             &zero,
-//             A3,    CUDA_R_32F, n,
-//             CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-//         // A = A3
-//         CHECK_CUDA(cudaMemcpy(A, A3, nn*sizeof(float), D2D));
-//         // ---------------------------
-
-
-
-//         // // A3 = A2 * A
-//         // convertFloatToHalf4(A2, hA2, nn);
-//         // CHECK_CUBLAS(cublasGemmEx(
-//         //     cublasH,
-//         //     CUBLAS_OP_N, CUBLAS_OP_N,
-//         //     n, n, n,
-//         //     &one,
-//         //     hA, CUDA_R_16F, n,
-//         //     hA2, CUDA_R_16F, n,
-//         //     &zero,
-//         //     A3,    CUDA_R_32F, n,
-//         //     CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-//         // /* Symmetrize A3 */
-//         // // symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-
-//         // /* Compute A = 1.5 * A - 0.5 * A3 */
-//         // // A = 1.5 * A
-//         // CHECK_CUBLAS( cublasSscal(cublasH, nn, &one_n_half, A, 1) );
-//         // // A = -0.5 * A3 + A
-//         // CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
-
-
-
-//         /* Symmetrize A */
-//         symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
-
-//         // Compute Frobenius norm ||A_our||_F
-//         float fro_err = 0.0f;
-//         CHECK_CUBLAS(cublasSnrm2(cublasH, nn, A, 1, &fro_err));
-
-//         // printf("Iter: %d | Fro norm = %.10f \n", i, fro_err);
-
-//         // // save the matrix for debugging
-//         // std::string filename = "/home/jordan/antoine/psd_projection_benchmarks/ksc/data/express/" + std::to_string(i) + ".bin";
-//         // saveMatrixForMatlab(A, n, filename);
-//     }
-
-//     /* Compute A = (I + A)/2 */
-//     // A = 1 * I + A
-//     CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &one, I, 1, A, 1) );
-//     // A = 0.5 * A
-//     CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
-
-//     /* Symmetrize A */
-//     symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
-
-//     /* Multiply the original matrix by A */
-//     // Wout = W * A
-//     convertFloatToHalf4(A, hA, nn);
-//     convertFloatToHalf4(W, hW, nn);
-//     CHECK_CUBLAS(cublasGemmEx(
-//         cublasH,
-//         CUBLAS_OP_N, CUBLAS_OP_N,
-//         n, n, n,
-//         &one,
-//         hW, CUDA_R_16F, n,
-//         hA, CUDA_R_16F, n,
-//         &zero,
-//         Wout,    CUDA_R_32F, n,
-//         CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-//     /* Symmetrize W */
-//     symmetrizeFloat(cublasH, Wout, n, A2); // we use A2 as a workspace
-
-//     /* Copy the result back to mat */
-//     CHECK_CUDA( cudaMemcpy(mat, Wout, nn * sizeof(float), D2D) );
-//     CHECK_CUDA( cudaDeviceSynchronize() );
-
-//     /* Free device memory */
-//     CHECK_CUDA( cudaFree(A) );
-//     CHECK_CUDA( cudaFree(A2) );
-//     CHECK_CUDA( cudaFree(A3) );
-//     CHECK_CUDA( cudaFree(A5) );
-//     CHECK_CUDA( cudaFree(I) );
-//     CHECK_CUDA( cudaFree(W) );
-//     CHECK_CUDA( cudaFree(Wout) );
-//     CHECK_CUDA( cudaFree(hA) );
-//     CHECK_CUDA( cudaFree(hA2) );
-//     CHECK_CUDA( cudaFree(hA3) );
-//     CHECK_CUDA( cudaFree(hW) );
-//     CHECK_CUDA( cudaDeviceSynchronize() );
-
-//     return;
-// }
-
-// std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
-//     auto start = std::chrono::high_resolution_clock::now();
-//     size_t nn = n * n;
-    
-//     float *dA_f;
-//     CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
-//     CHECK_CUDA(cudaMalloc(&dA_f, nn * sizeof(float)));
-
-//     double lo, up;
-//     approximate_two_norm(
-//         cublasH, solverH, dA_psd, n, &lo, &up
-//     ); // TODO: we use a TF16 handle here but the computations are done in FP64
-
-//     // scale to have eigenvalues in [-1, 1]
-//     const double scale = up > 0.0 ? up : 1.0;
-//     const double inv_scale = 1.0/scale;
-//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
-
-//     convert_double_to_float(
-//         dA_psd, dA_f, n
-//     );
-
-//     express_TF16(
-//         cublasH, dA_f, n, 0
-//     );
-
-//     convert_float_to_double(
-//         dA_f, dA_psd, n
-//     );
-
-
-//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
-
-//     CHECK_CUDA(cudaDeviceSynchronize());
-
-//     return std::chrono::high_resolution_clock::now() - start;
-// }
-
 void haoyu_TF16(
     cublasHandle_t cublasH,
     float* mat,
@@ -1288,9 +629,7 @@ void haoyu_TF16(
     CHECK_CUDA(cudaMalloc(&dT1,     nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dT2,     nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dF,      nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dDiff,   nn*sizeof(float)));
-
-    
+    CHECK_CUDA(cudaMalloc(&dDiff,   nn*sizeof(float)));    
 
     // 4) Copy host to device
     CHECK_CUDA(cudaMemcpy(dA_our, mat, nn*sizeof(float), D2D));
@@ -1316,7 +655,7 @@ void haoyu_TF16(
     for (int iter = 1; iter <= 7; iter++) {
         // T1 = A_our * A_our
         // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
-        convertFloatToHalf4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dA_our, dT3_half, nn);
         CHECK_CUBLAS(cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -1342,7 +681,7 @@ void haoyu_TF16(
             dT2,       n));
         // T1 = T2 * T2
         // float2half_kernel<<<blocks,threads>>>(dT2, dT3_half, nn);
-        convertFloatToHalf4(dT2, dT3_half, nn);
+        convert_float_to_half4(dT2, dT3_half, nn);
         CHECK_CUBLAS(cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -1374,8 +713,8 @@ void haoyu_TF16(
         // A_our = A_our * F (to dTmp, then copy back)
         // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
         // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
-        convertFloatToHalf4(dA_our, dT3_half, nn);
-        convertFloatToHalf4(dF, dT4_half, nn);
+        convert_float_to_half4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dF, dT4_half, nn);
         CHECK_CUBLAS(cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -1395,7 +734,7 @@ void haoyu_TF16(
         CHECK_CUDA(cudaMemcpy(dA_our, dTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
         // T1 = A_our^2, T2 = I - T1
         // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
-        convertFloatToHalf4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dA_our, dT3_half, nn);
         CHECK_CUBLAS(cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -1430,8 +769,8 @@ void haoyu_TF16(
         // A_our = A_our * F (to dTmp)
         // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
         // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
-        convertFloatToHalf4(dA_our, dT3_half, nn);
-        convertFloatToHalf4(dF, dT4_half, nn);
+        convert_float_to_half4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dF, dT4_half, nn);
         CHECK_CUBLAS(cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -1480,8 +819,8 @@ void haoyu_TF16(
         dF,            n));
     // float2half_kernel<<<blocks,threads>>>(dA_orig, dT3_half, nn);
     // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
-    convertFloatToHalf4(mat, dT3_half, nn);
-    convertFloatToHalf4(dF, dT4_half, nn);
+    convert_float_to_half4(mat, dT3_half, nn);
+    convert_float_to_half4(dF, dT4_half, nn);
     CHECK_CUBLAS(cublasGemmEx(
         cublasH,
         CUBLAS_OP_N, CUBLAS_OP_N,
