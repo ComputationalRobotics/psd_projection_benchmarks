@@ -835,7 +835,7 @@ int main(int argc, char* argv[]) {
         psd_file << "dataset,n,method,time,relative_error\n";
     } else {
         std::cerr << "ERROR: " << psd_output_file << " already exists and is not empty." << std::endl;
-        // return 1;
+        return 1;
     }
     psd_file.close();
 

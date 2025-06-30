@@ -34,41 +34,48 @@ datasets, instance_sizes = parse_args(ARGS)
 open("data/bin/meta.log", "w") do meta
     for n in instance_sizes
         for dataset in datasets
-            # print dataset and n
-            println("Generating dataset '$(dataset)' of size '$(n)'")
-            if dataset == "squared"
-                A = rand(n, n)
+            try
+                # print dataset and n
+                println("Generating dataset '$(dataset)' of size '$(n)'")
+
+                # generate the dataset
+                if dataset == "squared"
+                    A = rand(n, n)
+                    A = (A + A') / 2
+                    
+                    F = qr(A)
+                    A = F.Q * Diagonal([1 / i^2 for i in 1:n]) * F.Q'
+                elseif dataset == "cubed"
+                    A = rand(n, n)
+                    A = (A + A') / 2
+
+                    F = qr(A)
+                    A = F.Q * Diagonal([1 / i^3 for i in 1:n]) * F.Q'
+                else
+                    A = matrixdepot(dataset, n)
+                end
+
+                # symmetrize A
                 A = (A + A') / 2
-                
-                F = qr(A)
-                A = F.Q * Diagonal([1 / i^2 for i in 1:n]) * F.Q'
-            elseif dataset == "cubed"
-                A = rand(n, n)
-                A = (A + A') / 2
 
-                F = qr(A)
-                A = F.Q * Diagonal([1 / i^3 for i in 1:n]) * F.Q'
-            else
-                A = matrixdepot(dataset, n)
-            end
-
-            # symmetrize A
-            A = (A + A') / 2
-
-            open("data/bin/$(dataset)-$(n).bin", "w") do io
-                write(io, A)
+                open("data/bin/$(dataset)-$(n).bin", "w") do io
+                    write(io, A)
+                end
+            catch e
+                # don't interrupt execution if an error occurs for one dataset
+                println("Error generating dataset '$(dataset)' of size '$(n)': $(e)")
             end
 
             # compute the maximum and minimum eigenvalues
-            eigenvalues = eigen(A)
-            lambda_max = maximum(eigenvalues.values)
-            lambda_min = minimum(eigenvalues.values)
+            # eigenvalues = eigen(A)
+            # lambda_max = maximum(eigenvalues.values)
+            # lambda_min = minimum(eigenvalues.values)
 
-            # write the metadata
-            write(meta, "dataset '$(dataset)' of size '$(n)'\n")
-            write(meta, "\tlambda_max: $(lambda_max)\n")
-            write(meta, "\tlambda_min: $(lambda_min)\n")
-            write(meta, "\n")
+            # # write the metadata
+            # write(meta, "dataset '$(dataset)' of size '$(n)'\n")
+            # write(meta, "\tlambda_max: $(lambda_max)\n")
+            # write(meta, "\tlambda_min: $(lambda_min)\n")
+            # write(meta, "\n")
         end
     end
 end
