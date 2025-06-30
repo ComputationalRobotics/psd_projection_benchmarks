@@ -20,6 +20,7 @@
 #include "psd_projection/composite_FP32.h"
 #include "psd_projection/composite_TF16.h"
 #include "psd_projection/haoyu_TF16.h"
+#include "psd_projection/haoyu_FP32.h"
 
 #define RUN_PURE_TESTS false
 
@@ -602,9 +603,7 @@ std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cub
     const double inv_scale = 1.0/scale;
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-    composite_TF16(
-        cublasH, dA_psd, n, 0
-    );
+    composite_TF16(cublasH, dA_psd, n);
 
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
 
@@ -640,6 +639,41 @@ std::chrono::duration<double> haoyu_TF16_psd(
     convert_double_to_float(dA_psd, dA_psd_float, nn);
 
     haoyu_TF16(cublasH, dA_psd_float, n);
+
+    convert_float_to_double(dA_psd_float, dA_psd, nn);
+
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+
+    CHECK_CUDA(cudaDeviceSynchronize());
+    CHECK_CUDA(cudaFree(dA_psd_float));
+
+    return std::chrono::high_resolution_clock::now() - start;
+}
+
+std::chrono::duration<double> haoyu_FP32_psd(
+    cusolverDnHandle_t solverH, cublasHandle_t cublasH, 
+    const double* dA_orig, double* dA_psd, size_t n
+) {
+    auto start = std::chrono::high_resolution_clock::now();
+    size_t nn = n * n;
+    
+    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, dA_psd, n, &lo, &up
+    ); // TODO: we use a TF16 handle here but the computations are done in FP64
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+
+    float *dA_psd_float;
+    CHECK_CUDA(cudaMalloc(&dA_psd_float, nn*sizeof(float)));
+    convert_double_to_float(dA_psd, dA_psd_float, nn);
+
+    haoyu_FP32(cublasH, dA_psd_float, n);
 
     convert_float_to_double(dA_psd_float, dA_psd, nn);
 
@@ -922,6 +956,26 @@ int main(int argc, char* argv[]) {
         CHECK_CUDA(cudaMemset(dB, 1, n * n * sizeof(double)));
         CHECK_CUBLAS(cublasDgemm(
             cublasH_TF32, CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one_d, dA, n, dB, n,
+            &zero_d, dC, n));
+        CHECK_CUDA(cudaFree(dA));
+        CHECK_CUDA(cudaFree(dB));
+        CHECK_CUDA(cudaFree(dC));
+    }
+    for (int i = 0; i < restarts; ++i) {
+        double *dA, *dB, *dC;
+        size_t n = 1024; // Use a fixed size for warmup
+        double one_d = 1.0;
+        double zero_d = 0.0;
+        CHECK_CUDA(cudaMalloc(&dA, n * n * sizeof(double)));
+        CHECK_CUDA(cudaMalloc(&dB, n * n * sizeof(double)));
+        CHECK_CUDA(cudaMalloc(&dC, n * n * sizeof(double)));
+        // Initialize dA and dB with ones
+        CHECK_CUDA(cudaMemset(dA, 1, n * n * sizeof(double)));
+        CHECK_CUDA(cudaMemset(dB, 1, n * n * sizeof(double)));
+        CHECK_CUBLAS(cublasDgemm(
+            cublasH_TF16, CUBLAS_OP_N, CUBLAS_OP_N,
             n, n, n,
             &one_d, dA, n, dB, n,
             &zero_d, dC, n));
@@ -1286,6 +1340,31 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\tcomposite TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
             append_csv(psd_output_file, "composite TF16", dataset, n, duration, error);
+
+            // haoyu FP32
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += haoyu_FP32_psd(solverH, cublasH, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\t    haoyu FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "haoyu FP32", dataset, n, duration, error);
 
             // haoyu TF16
             duration = std::chrono::duration<double>(0.0);
