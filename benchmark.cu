@@ -17,8 +17,8 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 #include "psd_projection/lanczos.h"
-#include "psd_projection/express_FP32.h"
-#include "psd_projection/express_TF16.h"
+#include "psd_projection/composite_FP32.h"
+#include "psd_projection/composite_TF16.h"
 #include "psd_projection/haoyu_TF16.h"
 
 #define RUN_PURE_TESTS false
@@ -243,7 +243,7 @@ std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cubl
 }
 
 
-// void express_FP64(
+// void composite_FP64(
 //     cublasHandle_t cublasH,
 //     double* mat,
 //     const int n,
@@ -383,7 +383,7 @@ std::chrono::duration<double> composite_FP32_psd(cusolverDnHandle_t solverH, cub
     const double inv_scale = 1.0/scale;
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-    express_FP32(
+    composite_FP32(
         cublasH, dA_psd, n, 0
     );
 
@@ -441,7 +441,7 @@ std::chrono::duration<double> composite_FP32_psd_deflate(cusolverDnHandle_t solv
     const double inv_scale = 1.0/scale;
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-    express_FP32(
+    composite_FP32(
         cublasH, dA_psd, n, 0
     );
 
@@ -479,7 +479,7 @@ std::chrono::duration<double> composite_FP32_psd_deflate(cusolverDnHandle_t solv
 //     const double inv_scale = 1.0/scale;
 //     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-//     express_FP64(
+//     composite_FP64(
 //         cublasH, dA_psd, n, 0
 //     );
 
@@ -602,7 +602,7 @@ std::chrono::duration<double> composite_TF16_psd(cusolverDnHandle_t solverH, cub
     const double inv_scale = 1.0/scale;
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-    express_TF16(
+    composite_TF16(
         cublasH, dA_psd, n, 0
     );
 
@@ -763,7 +763,7 @@ std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH,
 //         dA_psd, dA_f, n
 //     );
 
-//     express_TF16(
+//     composite_TF16(
 //         cublasH, dA_f, n, 0
 //     );
 
