@@ -168,18 +168,12 @@ std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cubl
     float zero_s = 0.0;
     
     int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
-    // convert dA from double to float
     float *sA, *sA_psd;
     CHECK_CUDA(cudaMalloc(&sA, nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&sA_psd, nn*sizeof(float)));
     
-    std::vector<double> A_h_d(nn);
-    CHECK_CUDA(cudaMemcpy(A_h_d.data(), dA, nn*sizeof(double), D2H));
-    std::vector<float> A_h(nn);
-    for (size_t i = 0; i < nn; i++) {
-        A_h[i] = static_cast<float>(A_h_d[i]);
-    }
-    CHECK_CUDA(cudaMemcpy(sA, A_h.data(), nn*sizeof(float), H2D));
+    // convert dA from double to float
+    convert_double_to_float(dA, sA, nn);
 
     float *sW; CHECK_CUDA(cudaMalloc(&sW, n*sizeof(float)));
     int lwork_ev = 0;
@@ -196,12 +190,12 @@ std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cubl
     CHECK_CUDA(cudaDeviceSynchronize());
 
     std::vector<float> W_h(n);
-    CHECK_CUDA(cudaMemcpy(W_h.data(), sW, n*sizeof(float), cudaMemcpyDeviceToHost));
+    CHECK_CUDA(cudaMemcpy(W_h.data(), sW, n*sizeof(float), D2H));
     for(int i=0;i<n;i++) if(W_h[i]<0) W_h[i]=0;
 
     // Copy eigenvectors from dA to dV
     float *sV; CHECK_CUDA(cudaMalloc(&sV, nn*sizeof(float)));
-    CHECK_CUDA(cudaMemcpy(sV, sA, nn*sizeof(float), cudaMemcpyDeviceToDevice));
+    CHECK_CUDA(cudaMemcpy(sV, sA, nn*sizeof(float), D2D));
 
     // Scale columns of dV by W_h
     for(int i=0;i<n;i++){
@@ -219,16 +213,9 @@ std::chrono::duration<double> cusolver_FP32_psd(cusolverDnHandle_t solverH, cubl
         &zero_s,
         sTmp, CUDA_R_32F, n,
         CUDA_R_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-    CHECK_CUDA(cudaMemcpy(sA_psd, sTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
+    CHECK_CUDA(cudaMemcpy(sA_psd, sTmp, nn*sizeof(float), D2D));
 
-    // Convert sA_psd back to double
-    std::vector<double> dA_psd_h(nn);
-    std::vector<float> sA_psd_h(nn);
-    CHECK_CUDA(cudaMemcpy(sA_psd_h.data(), sA_psd, nn*sizeof(float), D2H));
-    for (size_t i = 0; i < nn; i++) {
-        dA_psd_h[i] = static_cast<double>(sA_psd_h[i]);
-    }
-    CHECK_CUDA(cudaMemcpy(dA_psd, dA_psd_h.data(), nn*sizeof(double), H2D));
+    convert_float_to_double(sA_psd, dA_psd, nn);
 
     // Cleanup
     CHECK_CUDA(cudaFree(sWork_ev));
@@ -376,8 +363,7 @@ std::chrono::duration<double> composite_FP32_psd(cusolverDnHandle_t solverH, cub
     double lo, up;
     approximate_two_norm(
         cublasH, solverH, dA_psd, n, &lo, &up
-    ); // TODO: sometimes we use a TF32 handle here but the computations are done in FP64
-    // auto time1 = std::chrono::high_resolution_clock::now() - start;
+    );
 
     // scale to have eigenvalues in [-1, 1]
     const double scale = up > 0.0 ? up : 1.0;
@@ -392,77 +378,69 @@ std::chrono::duration<double> composite_FP32_psd(cusolverDnHandle_t solverH, cub
 
     CHECK_CUDA(cudaDeviceSynchronize());
 
-    // auto time2 = std::chrono::high_resolution_clock::now() - start;
-
-    // std::ofstream file("profiling.txt", std::ios_base::app);
-    // if (!file.is_open()) {
-    //     std::cerr << "Error opening file" << std::endl;
-    // }
-    // file << n << " " << (double) time1.count() / (double) time2.count() << std::endl;
-
     return std::chrono::high_resolution_clock::now() - start;
 }
 
-std::chrono::duration<double> composite_FP32_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
-    auto start = std::chrono::high_resolution_clock::now();
-    size_t nn = n * n;
-    size_t k = K_DEFLATE;
-    assert(n > k);
+// std::chrono::duration<double> composite_FP32_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
+//     auto start = std::chrono::high_resolution_clock::now();
+//     size_t nn = n * n;
+//     size_t k = K_DEFLATE;
+//     assert(n > k);
     
-    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+//     CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
 
-    /* Step 1: compute the largest eigenpairs of the matrix */
-    size_t r;
-    double *eigenvalues, *eigenvectors;
-    CHECK_CUDA( cudaMalloc(&eigenvalues,      k * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
+//     /* Step 1: compute the largest eigenpairs of the matrix */
+//     size_t r;
+//     double *eigenvalues, *eigenvectors;
+//     CHECK_CUDA( cudaMalloc(&eigenvalues,      k * sizeof(double)) );
+//     CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
 
-    double _ = compute_eigenpairs(
-        cublasH, solverH, dA_psd, n, k, &r, eigenvalues, eigenvectors, false, 0
-    );
+//     double _ = compute_eigenpairs(
+//         cublasH, solverH, dA_psd, n, k, &r, eigenvalues, eigenvectors, false, 0
+//     );
 
-    std::vector<double> eigenvalues_host(r);
-    CHECK_CUDA( cudaMemcpy(eigenvalues_host.data(), eigenvalues, r * sizeof(double), D2H) );
+//     std::vector<double> eigenvalues_host(r);
+//     CHECK_CUDA( cudaMemcpy(eigenvalues_host.data(), eigenvalues, r * sizeof(double), D2H) );
 
-    /* Step 2: remove the largest eigenvalues from the matrix */
-    for (int i = 0; i < r; i++) {
-        // X <- X - \lambda_i * v_i v_i^T
-        double lambda = -eigenvalues_host[i];
-        double *v_i = eigenvectors + i * n;
-        CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, dA_psd, n) );
-    }
+//     /* Step 2: remove the largest eigenvalues from the matrix */
+//     for (int i = 0; i < r; i++) {
+//         // X <- X - \lambda_i * v_i v_i^T
+//         double lambda = -eigenvalues_host[i];
+//         double *v_i = eigenvectors + i * n;
+//         CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, dA_psd, n) );
+//     }
 
-    /* Step 3: scale the deflated matrix */
-    double up = compute_eigenpairs(
-        cublasH, solverH, dA_psd, n, 0, nullptr, nullptr, nullptr, true, 100
-    );
+//     /* Step 3: scale the deflated matrix */
+//     double up = compute_eigenpairs(
+//         cublasH, solverH, dA_psd, n, 0, nullptr, nullptr, nullptr, true, 100
+//     );
 
-    // scale to have eigenvalues in [-1, 1]
-    const double scale = up > 0.0 ? up : 1.0;
-    const double inv_scale = 1.0/scale;
-    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+//     // scale to have eigenvalues in [-1, 1]
+//     const double scale = up > 0.0 ? up : 1.0;
+//     const double inv_scale = 1.0/scale;
+//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-    composite_FP32(
-        cublasH, dA_psd, n, 0
-    );
+//     composite_FP32(
+//         cublasH, dA_psd, n, 0
+//     );
 
-    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
 
-    for (int i = 0; i < r; i++) {
-        // X <- X + \lambda_i * v_i v_i^T
-        double lambda = eigenvalues_host[i];
-        if (lambda > 0.0) { // only add positive eigenvalues
-            double *v_i = eigenvectors + i * n;
-            CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, dA_psd, n) );
-        }
-    }
+//     for (int i = 0; i < r; i++) {
+//         // X <- X + \lambda_i * v_i v_i^T
+//         double lambda = eigenvalues_host[i];
+//         if (lambda > 0.0) { // only add positive eigenvalues
+//             double *v_i = eigenvectors + i * n;
+//             CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, dA_psd, n) );
+//         }
+//     }
 
-    CHECK_CUDA( cudaFree(eigenvalues) );
-    CHECK_CUDA( cudaFree(eigenvectors) );
-    CHECK_CUDA(cudaDeviceSynchronize());
+//     CHECK_CUDA( cudaFree(eigenvalues) );
+//     CHECK_CUDA( cudaFree(eigenvectors) );
+//     CHECK_CUDA(cudaDeviceSynchronize());
 
-    return std::chrono::high_resolution_clock::now() - start;
-}
+//     return std::chrono::high_resolution_clock::now() - start;
+// }
 
 // std::chrono::duration<double> composite_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
 //     auto start = std::chrono::high_resolution_clock::now();
@@ -511,25 +489,17 @@ std::chrono::duration<double> FP32_gemm(cublasHandle_t cublasH, const double* dA
     size_t nn = n*n;
 
     float *sA, *sA2;
-    std::vector<double> A_h_d(nn);
-    std::vector<float> A_h(nn);
     CHECK_CUDA( cudaMalloc(&sA,  nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&sA2, nn * sizeof(float)) );
 
-    CHECK_CUDA( cudaMemcpy(A_h_d.data(), dA_orig, nn * sizeof(double), D2H) );
-    for (int i = 0; i < nn; i++)
-        A_h[i] = static_cast<float>(A_h_d[i]);
-    CHECK_CUDA( cudaMemcpy(sA, A_h.data(), nn * sizeof(float), H2D) );
+    convert_double_to_float(dA_orig, sA, nn);
 
     for (int i = 0; i < gemm_restarts; i++) {
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, sA, n, sA, n, &zero, sA2, n) );
     }
     CHECK_CUDA( cudaDeviceSynchronize() );
     
-    CHECK_CUDA( cudaMemcpy(A_h.data(), sA2, nn * sizeof(float), D2H) );
-    for (int i = 0; i < nn; i++)
-        A_h_d[i] = static_cast<double>(A_h[i]);
-    CHECK_CUDA( cudaMemcpy(dA2, A_h_d.data(), nn * sizeof(double), H2D) );
+    convert_float_to_double(sA2, dA2, nn);
     
     CHECK_CUDA( cudaFree(sA) );
     CHECK_CUDA( cudaFree(sA2) );
@@ -546,15 +516,10 @@ std::chrono::duration<double> TF16_gemm(cublasHandle_t cublasH, const double* dA
     size_t nn = n*n;
 
     float *sA, *sA2;
-    std::vector<double> A_h_d(nn);
-    std::vector<float> A_h(nn);
     CHECK_CUDA( cudaMalloc(&sA,  nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&sA2, nn * sizeof(float)) );
 
-    CHECK_CUDA( cudaMemcpy(A_h_d.data(), dA_orig, nn * sizeof(double), D2H) );
-    for (int i = 0; i < nn; i++)
-        A_h[i] = static_cast<float>(A_h_d[i]);
-    CHECK_CUDA( cudaMemcpy(sA, A_h.data(), nn * sizeof(float), H2D) );
+    convert_double_to_float(dA_orig, sA, nn);
 
     __half *hA; 
     CHECK_CUDA(cudaMalloc(&hA, nn*sizeof(__half)));
@@ -574,10 +539,7 @@ std::chrono::duration<double> TF16_gemm(cublasHandle_t cublasH, const double* dA
     }
     CHECK_CUDA( cudaDeviceSynchronize() );
     
-    CHECK_CUDA( cudaMemcpy(A_h.data(), sA2, nn * sizeof(float), D2H) );
-    for (int i = 0; i < nn; i++)
-        A_h_d[i] = static_cast<double>(A_h[i]);
-    CHECK_CUDA( cudaMemcpy(dA2, A_h_d.data(), nn * sizeof(double), H2D) );
+    convert_float_to_double(sA2, dA2, nn);
     
     CHECK_CUDA( cudaDeviceSynchronize() );
     CHECK_CUDA( cudaFree(sA) );
@@ -685,71 +647,71 @@ std::chrono::duration<double> haoyu_FP32_psd(
     return std::chrono::high_resolution_clock::now() - start;
 }
 
-std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
-    auto start = std::chrono::high_resolution_clock::now();
-    size_t nn = n * n;
-    size_t k = K_DEFLATE;
-    assert(n > k);
+// std::chrono::duration<double> haoyu_TF16_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
+//     auto start = std::chrono::high_resolution_clock::now();
+//     size_t nn = n * n;
+//     size_t k = K_DEFLATE;
+//     assert(n > k);
     
-    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+//     CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
 
-    /* Step 1: compute the largest eigenpairs of the matrix */
-    size_t r;
-    double *eigenvalues, *eigenvectors;
-    CHECK_CUDA( cudaMalloc(&eigenvalues,      k * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
+//     /* Step 1: compute the largest eigenpairs of the matrix */
+//     size_t r;
+//     double *eigenvalues, *eigenvectors;
+//     CHECK_CUDA( cudaMalloc(&eigenvalues,      k * sizeof(double)) );
+//     CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
 
-    double _ = compute_eigenpairs(
-        cublasH, solverH, dA_psd, n, k, &r, eigenvalues, eigenvectors, false, 0
-    );
+//     double _ = compute_eigenpairs(
+//         cublasH, solverH, dA_psd, n, k, &r, eigenvalues, eigenvectors, false, 0
+//     );
 
-    std::vector<double> eigenvalues_host(r);
-    CHECK_CUDA( cudaMemcpy(eigenvalues_host.data(), eigenvalues, r * sizeof(double), D2H) );
+//     std::vector<double> eigenvalues_host(r);
+//     CHECK_CUDA( cudaMemcpy(eigenvalues_host.data(), eigenvalues, r * sizeof(double), D2H) );
 
-    /* Step 2: remove the largest eigenvalues from the matrix */
-    for (int i = 0; i < r; i++) {
-        // X <- X - \lambda_i * v_i v_i^T
-        double lambda = -eigenvalues_host[i];
-        double *v_i = eigenvectors + i * n;
-        CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, dA_psd, n) );
-    }
+//     /* Step 2: remove the largest eigenvalues from the matrix */
+//     for (int i = 0; i < r; i++) {
+//         // X <- X - \lambda_i * v_i v_i^T
+//         double lambda = -eigenvalues_host[i];
+//         double *v_i = eigenvectors + i * n;
+//         CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, dA_psd, n) );
+//     }
 
-    /* Step 3: scale the deflated matrix */
-    double up = compute_eigenpairs(
-        cublasH, solverH, dA_psd, n, 0, nullptr, nullptr, nullptr, true, 100
-    );
+//     /* Step 3: scale the deflated matrix */
+//     double up = compute_eigenpairs(
+//         cublasH, solverH, dA_psd, n, 0, nullptr, nullptr, nullptr, true, 100
+//     );
 
-    // scale to have eigenvalues in [-1, 1]
-    const double scale = up > 0.0 ? up : 1.0;
-    const double inv_scale = 1.0/scale;
-    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+//     // scale to have eigenvalues in [-1, 1]
+//     const double scale = up > 0.0 ? up : 1.0;
+//     const double inv_scale = 1.0/scale;
+//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
 
-    float *dA_psd_float;
-    CHECK_CUDA(cudaMalloc(&dA_psd_float, nn*sizeof(float)));
-    convert_double_to_float(dA_psd, dA_psd_float, nn);
+//     float *dA_psd_float;
+//     CHECK_CUDA(cudaMalloc(&dA_psd_float, nn*sizeof(float)));
+//     convert_double_to_float(dA_psd, dA_psd_float, nn);
 
-    haoyu_TF16(cublasH, dA_psd_float, n);
+//     haoyu_TF16(cublasH, dA_psd_float, n);
 
-    convert_float_to_double(dA_psd_float, dA_psd, nn);
+//     convert_float_to_double(dA_psd_float, dA_psd, nn);
 
-    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+//     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
 
-    for (int i = 0; i < r; i++) {
-        // X <- X + \lambda_i * v_i v_i^T
-        double lambda = eigenvalues_host[i];
-        if (lambda > 0.0) { // only add positive eigenvalues
-            double *v_i = eigenvectors + i * n;
-            CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, dA_psd, n) );
-        }
-    }
+//     for (int i = 0; i < r; i++) {
+//         // X <- X + \lambda_i * v_i v_i^T
+//         double lambda = eigenvalues_host[i];
+//         if (lambda > 0.0) { // only add positive eigenvalues
+//             double *v_i = eigenvectors + i * n;
+//             CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, dA_psd, n) );
+//         }
+//     }
 
-    CHECK_CUDA( cudaFree(eigenvalues) );
-    CHECK_CUDA( cudaFree(eigenvectors) );
-    CHECK_CUDA( cudaFree(dA_psd_float) );
-    CHECK_CUDA(cudaDeviceSynchronize());
+//     CHECK_CUDA( cudaFree(eigenvalues) );
+//     CHECK_CUDA( cudaFree(eigenvectors) );
+//     CHECK_CUDA( cudaFree(dA_psd_float) );
+//     CHECK_CUDA(cudaDeviceSynchronize());
 
-    return std::chrono::high_resolution_clock::now() - start;
-}
+//     return std::chrono::high_resolution_clock::now() - start;
+// }
 
 // std::chrono::duration<double> composite_TF16_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
 //     auto start = std::chrono::high_resolution_clock::now();
