@@ -2263,6 +2263,26 @@ int main(int argc, char* argv[]) {
         CHECK_CUDA(cudaFree(dB));
         CHECK_CUDA(cudaFree(dC));
     }
+    for (int i = 0; i < restarts; ++i) {
+        double *dA, *dB, *dC;
+        size_t n = 1024; // Use a fixed size for warmup
+        double one_d = 1.0;
+        double zero_d = 0.0;
+        CHECK_CUDA(cudaMalloc(&dA, n * n * sizeof(double)));
+        CHECK_CUDA(cudaMalloc(&dB, n * n * sizeof(double)));
+        CHECK_CUDA(cudaMalloc(&dC, n * n * sizeof(double)));
+        // Initialize dA and dB with ones
+        CHECK_CUDA(cudaMemset(dA, 1, n * n * sizeof(double)));
+        CHECK_CUDA(cudaMemset(dB, 1, n * n * sizeof(double)));
+        CHECK_CUBLAS(cublasDgemm(
+            cublasH_emulated, CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one_d, dA, n, dB, n,
+            &zero_d, dC, n));
+        CHECK_CUDA(cudaFree(dA));
+        CHECK_CUDA(cudaFree(dB));
+        CHECK_CUDA(cudaFree(dC));
+    }
     std::cout << " done." << std::endl << std::endl;
 
     /* Main benchmarking loop */
