@@ -8,12 +8,12 @@
 
 ### full tests
 # datasets=("binomial" "cauchy" "chebspec" "chow" "circul" "clement" "companion" "dingdong" "fiedler" "forsythe" "frank" "golub" "grcar" "hadamard" "hankel" "hilb" "invhilb" "invol" "kahan" "kms" "lehmer" "lotkin" "magic" "minij" "moler" "neumann" "oscillate" "parter" "pascal" "pei" "poisson" "prolate" "randcorr" "rando" "randsvd" "rohess" "rosser" "sampling" "toeplitz" "tridiag" "triw" "vand" "wathen" "wilkinson") # all datasets
-# datasets=("cauchy" "chebspec" "chow" "circul" "clement" "companion" "dingdong" "fiedler" "forsythe" "frank" "golub" "grcar" "hankel" "hilb" "kahan" "kms" "lehmer" "lotkin" "magic" "minij" "moler" "oscillate" "parter" "pei" "prolate" "randcorr" "rando" "rohess" "sampling" "toeplitz" "tridiag" "triw" "wilkinson") # without the removed datasets
+datasets=("cauchy" "chebspec" "chow" "circul" "clement" "companion" "dingdong" "fiedler" "forsythe" "frank" "golub" "grcar" "hankel" "hilb" "kahan" "kms" "lehmer" "lotkin" "magic" "minij" "moler" "oscillate" "parter" "pei" "prolate" "randcorr" "rando" "rohess" "sampling" "toeplitz" "tridiag" "triw" "wilkinson") # without the removed datasets
 # removed: binomial (overflow), hadamard (power of 2), invhilb (overflow), neumann (sparse), poisson (sparse), rosser (power of 2), wathen (sparse), invol (overflow), pascal (overflow), vand (overflow), randsvd (timeout)
 
-datasets=("clement" "randcorr")
+# datasets=("forsythe" "hilb" "grcar" "oscillate")
 
-instance_sizes=(20000)
+instance_sizes=(10000)
 
 restarts=1
 gemmrestarts=1

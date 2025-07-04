@@ -284,16 +284,16 @@ void fill_tridiagonal(
     fill_tridiagonal_kernel<<<blocks, threadsPerBlock>>>(T, d_alpha, d_beta, nb_iter);
     
     // Check for errors in kernel launch
-    CHECK_CUDA(cudaGetLastError());
+    CHECK_CUDA(cudaDeviceSynchronize());
 }
 
 
 void approximate_two_norm(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,
-    const double* A, size_t n,
+    double* A, size_t n,
     double* lo, double* up,
-    size_t max_iter = 5, double tol = 1e-6
+    size_t max_iter = 20, double tol = 1e-10
 ) {
     /* Allocations */
     // constants
@@ -301,11 +301,10 @@ void approximate_two_norm(
     const double one = 1.0;
     
     // storage
-    double *V, *V_old, *d_alpha, *q, *w, *w1;
+    double *V, *V_old, *q, *w, *w1;
     max_iter = min(max_iter, n);
     CHECK_CUDA(cudaMalloc(&V,     n * max_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&V_old,            n * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&d_alpha,     max_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&q,                n * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&w,                n * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&w1,               n * sizeof(double)));
@@ -318,6 +317,36 @@ void approximate_two_norm(
     /* Initial vector */
     // q = randn(n, 1)
     fill_random(q, n, 0);
+
+    // read from a txt file for debug
+    // std::ifstream q_file("q.txt");
+    // if (q_file.is_open()) {
+    //     std::vector<double> q_host(n);
+    //     for (size_t i = 0; i < n; ++i) {
+    //         q_file >> q_host[i];
+    //     }
+    //     q_file.close();
+    //     CHECK_CUDA(cudaMemcpy(q, q_host.data(), n * sizeof(double), cudaMemcpyHostToDevice));
+    // } else {
+    //     std::cerr << "Unable to open file q.txt for reading." << std::endl;
+    //     return;
+    // }
+
+    // // save q to a txt file with 17 decimal places
+    // std::vector<double> q_host(n);
+    // CHECK_CUDA(cudaMemcpy(q_host.data(), q, n * sizeof(double), cudaMemcpyDeviceToHost));
+
+    // if (n == 10000) {
+    //     std::ofstream q_file("q.txt");
+    //     if (q_file.is_open()) {
+    //         for (size_t i = 0; i < n; ++i) {
+    //             q_file << std::setprecision(17) << q_host[i] << "\n";
+    //         }
+    //         q_file.close();
+    //     } else {
+    //         std::cerr << "Unable to open file q.txt for writing." << std::endl;
+    //     }
+    // }
 
     // q = q / norm(q)
     double norm_q;
@@ -361,6 +390,8 @@ void approximate_two_norm(
         // beta(k) = norm(w)
         CHECK_CUBLAS(cublasDnrm2(cublasH, n, w, 1, &beta[k]));
 
+        printf("alpha[k]: %5.4e, beta[k]: %5.4e \n", alpha[k], beta[k]);
+
         if (beta[k] <= tol * alpha[k] && k > 1)
             break;
             
@@ -394,7 +425,6 @@ void approximate_two_norm(
 
         CHECK_CUDA(cudaFree(V));
         CHECK_CUDA(cudaFree(V_old));
-        CHECK_CUDA(cudaFree(d_alpha));
         CHECK_CUDA(cudaFree(q));
         CHECK_CUDA(cudaFree(w));
         CHECK_CUDA(cudaFree(w1));
@@ -405,11 +435,12 @@ void approximate_two_norm(
 
     /* Tridiagonal T */
     // T = diag(alpha) + diag(beta(2:end),1) + diag(beta(2:end),-1);
-    double *T, *d_beta;
+    double *T, *d_alpha, *d_beta;
     CHECK_CUDA(cudaMalloc(&T,       nb_iter * nb_iter * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&d_beta,      (nb_iter - 1) * sizeof(double)));
-    CHECK_CUDA(cudaMemcpy(d_alpha, alpha.data(), (nb_iter - 1) * sizeof(double), H2D));
-    CHECK_CUDA(cudaMemcpy(d_beta,  beta.data(),  (nb_iter - 1) * sizeof(double), H2D));
+    CHECK_CUDA(cudaMalloc(&d_beta,            nb_iter * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&d_alpha,           nb_iter * sizeof(double)));
+    CHECK_CUDA(cudaMemcpy(d_alpha, alpha.data(), nb_iter * sizeof(double), H2D));
+    CHECK_CUDA(cudaMemcpy(d_beta,  beta.data(),  nb_iter * sizeof(double), H2D));
     fill_tridiagonal(
         T, d_alpha, d_beta, nb_iter
     );
@@ -432,10 +463,22 @@ void approximate_two_norm(
                                     nb_iter, T, nb_iter, d_eigenvalues,
                                     d_work_eig, lwork_eig, devInfo));
 
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    // print eigenvalues for debugging
+    std::vector<double> eigenvalues(nb_iter);
+    CHECK_CUDA(cudaMemcpy(eigenvalues.data(), d_eigenvalues, nb_iter * sizeof(double), cudaMemcpyDeviceToHost));
+    std::cout << "Eigenvalues: ";
+    for (const auto& ev : eigenvalues) {
+        std::cout << ev << "\n";
+    }
+    std::cout << std::endl;
+
     // retrieve the max eigenvalue and corresponding eigenvector
-    int idx_max;
-    CHECK_CUBLAS(cublasIdamax(cublasH, nb_iter, d_eigenvalues, 1, &idx_max));
-    idx_max--; // convert to 0-based index
+    // int idx_max;
+    // CHECK_CUBLAS(cublasIdamax(cublasH, nb_iter, d_eigenvalues, 1, &idx_max));
+    // idx_max--; // convert to 0-based index
+    int idx_max = nb_iter - 1;
 
     double theta;
     CHECK_CUDA(cudaMemcpy(&theta, d_eigenvalues + idx_max, sizeof(double), D2H));
@@ -450,9 +493,9 @@ void approximate_two_norm(
 
     double *ry;
     CHECK_CUDA(cudaMalloc(&ry, n * sizeof(double)));
-    // ry = A * q
+    // ry = A * y
     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, n,
-                                &one, A, n, q, 1,
+                                &one, A, n, y, 1,
                                 &zero, ry, 1));
     // w1 = At * ry
     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, n,
@@ -460,7 +503,7 @@ void approximate_two_norm(
                                 &zero, w1, 1));
     // ry = w1
     CHECK_CUBLAS(cublasDcopy(cublasH, n, ry, 1, w1, 1));
-    // hence ry = A^T * A * q
+    // hence ry = A^T * A * y
 
     // ry = ry - theta * y
     double minus_theta = -theta;
@@ -473,7 +516,9 @@ void approximate_two_norm(
     // up = sqrt(theta + norm(ry))
     double norm_ry;
     CHECK_CUBLAS(cublasDnrm2(cublasH, n, ry, 1, &norm_ry));
+    printf("theta: %5.4e, norm_ry: %5.4e \n", theta, norm_ry);
     *up = std::sqrt(theta + norm_ry);
+    printf("up: %5.4e \n", *up);
 
     /* Free memory */
     CHECK_CUDA(cudaFree(V));
@@ -492,6 +537,46 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(ry));
     CHECK_CUDA(cudaDeviceSynchronize());
 
+    std::cout << "Upper bound: " << *up << std::endl;
+
+    return;
+}
+
+// for stability
+void approximate_two_norm_moreiter(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t cusolverH,
+    double* A, size_t n,
+    double* lo, double* up,
+    size_t max_iter = 5, double tol = 1e-6
+) {
+    double up_tmp;
+    double up_tmp_inv;
+    approximate_two_norm(
+        cublasH, cusolverH, A, n, lo, &up_tmp
+    );
+    up_tmp = up_tmp > 0.0 ? up_tmp : 1.0;
+    *up = up_tmp;
+    if (*up == 1.0) return;
+
+    size_t nn = n * n;
+    up_tmp_inv = 1.0 / up_tmp;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &up_tmp_inv, A, 1) );
+
+    for (int i = 0; i < 2; ++i) {
+        approximate_two_norm(
+            cublasH, cusolverH, A, n, lo, &up_tmp
+        );
+
+        if (up_tmp > 1.0) {
+            printf("Modify *up further! *up_tmp = %5.4e, *up = %5.4e \n", up_tmp, *up);
+            *up = (*up) * (up_tmp);
+            up_tmp_inv = 1.0 / (up_tmp);
+            CHECK_CUBLAS( cublasDscal(cublasH, nn, &up_tmp_inv, A, 1) );
+        }
+    }
+
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, up, A, 1) );
     return;
 }
 
@@ -979,9 +1064,7 @@ void composite_TF16(
 
     // useful constants
     const float half       =  0.5f;
-    const float minus_half = -0.5f;
     const float one        =  1.0f;
-    const float one_n_half =  1.5f;
     const float zero       =  0.0f;
 
     convert_double_to_float(mat, A, nn);
@@ -1011,6 +1094,15 @@ void composite_TF16(
         { 2.0674922563, -1.4317903208, 0.3876934521 }, 
         { 1.8438914749, -1.1872290786, 0.3433825749 }, 
     };
+    // std::vector<std::vector<float>> coeff = {
+    //     { 8.3864641622, -24.8594799076, 18.4448273259 },
+    //     { 4.1414199835, -3.0779218910, 0.5748581003 },
+    //     { 3.9226309693, -2.9248155905, 0.5574020970 },
+    //     { 3.2540457594, -2.4403169649, 0.5023343504 },
+    //     { 2.2512376183, -1.6283766019, 0.4120702252 },
+    //     { 1.8700160370, -1.2526309162, 0.3727910154 },
+    //     { 1.8564365206, -1.2376247369, 0.3712872262 },
+    // };
 
     /* Approximation of the step function */
     for (int i = 0; i < coeff.size(); i++) {
@@ -1252,6 +1344,11 @@ std::chrono::duration<double> cusolver_FP64_psd(cusolverDnHandle_t solverH, cubl
 
     std::vector<double> W_h(n);
     CHECK_CUDA(cudaMemcpy(W_h.data(), dW, n*sizeof(double), cudaMemcpyDeviceToHost));
+
+    std::cout << "Max and min eigenvalues: "
+              << *std::max_element(W_h.begin(), W_h.end()) << ", "
+              << *std::min_element(W_h.begin(), W_h.end()) << std::endl;
+
     for(int i=0;i<n;i++) if(W_h[i]<0) W_h[i]=0;
 
     // Copy eigenvectors from dA to dV

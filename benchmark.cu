@@ -1311,7 +1311,7 @@ int main(int argc, char* argv[]) {
             }
             duration /= restarts;
             error /= restarts;
-            std::cout << "\t\tcomposite FP32 emulated -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "       composite FP32 emulated -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
             append_csv(psd_output_file, "composite FP32 emulated", dataset, n, duration, error);
 

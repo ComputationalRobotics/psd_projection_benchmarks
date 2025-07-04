@@ -36,7 +36,7 @@ function [lo, up, output_info] = approximate_twonorm(A, m, tol, reorth)
     q = randn(n,1);
     % q = ones(n, 1);
 
-    % q = load('../q_initial.txt');
+    % q = load('../q.txt');
     % if length(q) ~= n
     %     error('Initial vector q must have the same length as the number of columns in A.');
     % end
@@ -69,7 +69,7 @@ function [lo, up, output_info] = approximate_twonorm(A, m, tol, reorth)
     
         beta(k) = norm(w);
 
-        fprintf("alpha(k): %5.4e, beta(k): %5.4e \n", alpha(k), beta(k));
+        % fprintf("alpha(k): %5.4e, beta(k): %5.4e \n", alpha(k), beta(k));
     
         % stopping test (explicit resid later guarantees rigour, this just
         % limits work)
@@ -92,7 +92,8 @@ function [lo, up, output_info] = approximate_twonorm(A, m, tol, reorth)
     V     = V(:,1:k);
     
     % tridiagonal T_k
-    T = diag(alpha) + diag(beta(2:end),1) + diag(beta(2:end),-1);
+    T = diag(alpha) + diag(beta(1:end-1),1) + diag(beta(1:end-1),-1);
+    % T = diag(alpha) + diag(beta(2:end),1) + diag(beta(2:end),-1);
 
     % ------------- largest Ritz pair ----------------------------------------
     [ritzVecs, ritzVals] = eig(T,'vector');

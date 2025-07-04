@@ -11,12 +11,17 @@ datasets = ["cauchy", "chebspec", "chow", "circul", "clement", "companion", "din
 
 if __name__ == "__main__":
     n_first_datasets = len(datasets)
-    n = 20000
+    n = 5000
 
     # Load the data
+    # df = pd.read_csv("results/saved/psd_results-B200.csv")
     df = pd.read_csv("results/psd_results.csv")
     n_datasets = len(pd.unique(df["dataset"]))
     aspect = min(n_first_datasets, n_datasets) / 6
+
+    # print total execution time
+    total_time = df["time"].sum()
+    print(f"\nTotal execution time for all methods: {total_time:.2f} s")
 
     df = df[df["n"] == n]
     df = df[df["dataset"].isin(datasets[:n_first_datasets])]
@@ -57,7 +62,7 @@ if __name__ == "__main__":
 
     with pd.option_context('display.float_format', '{:.2e}'.format):
         print(f"\nStats for n = {n}, {min(n_first_datasets, n_datasets)} datasets:")
-        method_order = ["cuSOLVER FP64", "cuSOLVER FP32", "composite FP32", "composite TF16", "haoyu FP32", "haoyu TF16"]
+        method_order = ["cuSOLVER FP64", "cuSOLVER FP32", "composite FP32", "composite FP32 emulated", "composite TF16"]#, "haoyu FP32", "haoyu TF16"]
         stats = df[df["dataset"] != "triw"].groupby("method").agg({"relative_error": ["mean", "median", "max"], "time": ["mean", "median"]})
         stats = stats.reindex(method_order)
         print(stats)
