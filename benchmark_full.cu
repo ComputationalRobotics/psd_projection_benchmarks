@@ -2195,6 +2195,441 @@ std::chrono::duration<double> haoyu_FP32_psd(
 // }
 
 
+/* ------------------- baselines: -------------------------- */
+/* polar express FP32 */
+void polarexpress_FP32(
+    cublasHandle_t cublasH,
+    double* mat,
+    const int n,
+    const bool verbose
+) {
+    const int nn = n * n;
+
+    /* Allocations */
+    // device memory
+    float *A, *A2, *A3;
+    CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
+
+    // useful constants
+    const float half       =  0.5f;
+    const float minus_half = -0.5f;
+    const float one        =  1.0f;
+    const float one_n_half =  1.5f;
+    const float zero       =  0.0f;
+
+    /* Convert the initial matrix*/
+    convert_double_to_float(mat, A, nn);
+
+    const std::vector<std::vector<float>> coeff = {
+        {8.205160414005569, -22.901934987056034, 16.460724910180303},
+        {4.0669156198795875, -2.861284534588475, 0.5183804464778605},
+        {3.9134926112054607, -2.824251876723087, 0.5248485625148532},
+        {3.3060139701337725, -2.430227567449687, 0.4869515205509481},
+        {2.304016813944474, -1.6427206546268969, 0.4009100949022211},
+        {1.8771914635816975, -1.2356588245606832, 0.3590046107458665},
+        {1.8564430512944288, -1.2132457535214525, 0.3568004238203446},
+        {1.8564364186731164, -1.2132392045600955, 0.3568003776956684},
+        {1.8564311666088567, -1.2132289074471427, 0.35679533060704244},
+        {1.8564311659068637, -1.2132289060708275, 0.3567953299324476}
+    }; 
+
+    /* Approximation of the step function */
+    for (int i = 0; i < coeff.size(); i++) {
+        float a = coeff[i][0];
+        float b = coeff[i][1];
+        float c = coeff[i][2];
+
+        /* Compute the powers of A*/
+        // A2 = A * A
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
+
+        // A3 = A2 * A
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
+
+        // A = a * A
+        CHECK_CUBLAS( cublasSscal(cublasH, nn, &a, A, 1) );
+        // A = b * A3 + A
+        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &b, A3, 1, A, 1) );
+        // at this point, A = a * A + b * A3
+
+        // A = c * A3 * A2 + A
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &c, A3, n, A2, n, &one, A, n) );
+
+        /* Symmetrize A */
+        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
+    }
+
+    // A = I + A
+    add_identity(cublasH, A, n);
+    // A = 0.5 * A
+    CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
+
+    /* Multiply the original matrix by A */
+    // W = A_origin * A
+    convert_double_to_float(mat, A2, nn);
+    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
+
+    /* Symmetrize W */
+    symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+
+    /* Copy the result back to mat */
+    convert_float_to_double(A3, mat, nn);
+
+    /* Free device memory */
+    CHECK_CUDA( cudaFree(A) );
+    CHECK_CUDA( cudaFree(A2) );
+    CHECK_CUDA( cudaFree(A3) );
+}
+
+std::chrono::duration<double> polarexpress_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    size_t nn = n * n;
+    
+    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, dA_psd, n, &lo, &up
+    );
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+
+    polarexpress_FP32(
+        cublasH, dA_psd, n, 0
+    );
+
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    return std::chrono::high_resolution_clock::now() - start;
+}
+
+/* polar express TF16 */
+void polarexpress_TF16(
+    cublasHandle_t cublasH,
+    double* mat,
+    const int n
+) {
+    const int nn = n * n;
+
+    /* Allocations */
+    // device memory
+    float *A, *A2, *A3;
+    CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
+
+    __half *hA, *hA2, *hA3;
+    CHECK_CUDA(cudaMalloc(&hA,  nn * sizeof(__half)));
+    CHECK_CUDA(cudaMalloc(&hA2, nn * sizeof(__half)));
+    CHECK_CUDA(cudaMalloc(&hA3, nn * sizeof(__half)));
+
+    // useful constants
+    const float half       =  0.5f;
+    const float one        =  1.0f;
+    const float zero       =  0.0f;
+
+    convert_double_to_float(mat, A, nn);
+
+    /* Coefficients */
+    std::vector<std::vector<float>> coeff = { 
+        {8.205160414005569, -22.901934987056034, 16.460724910180303},
+        {4.0669156198795875, -2.861284534588475, 0.5183804464778605},
+        {3.9134926112054607, -2.824251876723087, 0.5248485625148532},
+        {3.3060139701337725, -2.430227567449687, 0.4869515205509481},
+        {2.304016813944474, -1.6427206546268969, 0.4009100949022211},
+        {1.8771914635816975, -1.2356588245606832, 0.3590046107458665},
+        {1.8564430512944288, -1.2132457535214525, 0.3568004238203446} 
+    };
+
+    /* Approximation of the step function */
+    for (int i = 0; i < coeff.size(); i++) {
+        const float a = coeff[i][0];
+        const float b = coeff[i][1];
+        const float c = coeff[i][2];
+
+        /* Compute the powers of A*/
+        // A2 = A * A
+        convert_float_to_half4(A, hA, nn);
+        CHECK_CUBLAS(cublasGemmEx(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, hA, CUDA_R_16F, n, hA, CUDA_R_16F, n, &zero, A2, CUDA_R_32F, n, CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+        // A3 = A2 * A
+        convert_float_to_half4(A2, hA2, nn);
+        CHECK_CUBLAS(cublasGemmEx(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, hA, CUDA_R_16F, n, hA2, CUDA_R_16F, n, &zero, A3, CUDA_R_32F, n, CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+        // A = a * A
+        CHECK_CUBLAS( cublasSscal(cublasH, nn, &a, A, 1) );
+        // A = b * A3 + A
+        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &b, A3, 1, A, 1) );
+        // at this point, A = a * A + b * A3
+
+        // A = c * A3 * A2 + A
+        convert_float_to_half4(A3, hA3, nn);
+        CHECK_CUBLAS(cublasGemmEx(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &c, hA2, CUDA_R_16F, n, hA3, CUDA_R_16F, n, &one, A, CUDA_R_32F, n, CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+        /* Symmetrize A */
+        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
+    }
+
+    add_identity(cublasH, A, n);
+    // A = 0.5 * A
+    CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
+
+    /* Multiply the original matrix by A */
+    convert_double_to_float(mat, A2, nn);
+    convert_float_to_half4(A, hA, nn);
+    convert_float_to_half4(A2, hA2, nn);
+    CHECK_CUBLAS(cublasGemmEx(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, hA2, CUDA_R_16F, n, hA, CUDA_R_16F, n, &zero, A3, CUDA_R_32F, n, CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+    /* Symmetrize W */
+    symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+
+    /* Copy the result back to mat */
+    convert_float_to_double(A3, mat, nn);
+
+    /* Free device memory */
+    CHECK_CUDA( cudaFree(A) );
+    CHECK_CUDA( cudaFree(A2) );
+    CHECK_CUDA( cudaFree(A3) );
+    CHECK_CUDA( cudaFree(hA) );
+    CHECK_CUDA( cudaFree(hA2) );
+    CHECK_CUDA( cudaFree(hA3) );
+}
+
+std::chrono::duration<double> polarexpress_TF16_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    size_t nn = n * n;
+    
+    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, dA_psd, n, &lo, &up
+    ); // TODO: we use a TF16 handle here but the computations are done in FP64
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+
+    polarexpress_TF16(cublasH, dA_psd, n);
+
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    return std::chrono::high_resolution_clock::now() - start;
+}
+
+/* Newton Schulz FP32 */
+void newton_FP32(
+    cublasHandle_t cublasH,
+    double* mat,
+    const int n,
+    const bool verbose
+) {
+    const int nn = n * n;
+
+    const size_t smoothing_steps = 15;
+
+    /* Allocations */
+    // device memory
+    float *A, *A2, *A3;
+    CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
+
+    // useful constants
+    const float half       =  0.5f;
+    const float minus_half = -0.5f;
+    const float one        =  1.0f;
+    const float one_n_half =  1.5f;
+    const float zero       =  0.0f;
+
+    /* Convert the initial matrix*/
+    convert_double_to_float(mat, A, nn);
+
+    /* Smoothing function */
+    for (int i = 0; i < smoothing_steps; i++) {
+        // A2 = A * A
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
+
+        // A3 = A2 * A
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
+
+        /* Symmetrize A3 */
+        symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+
+        /* Compute A = 1.5 * A - 0.5 * A3 */
+        // A = 1.5 * A
+        CHECK_CUBLAS( cublasSscal(cublasH, nn, &one_n_half, A, 1) );
+        // A = -0.5 * A3 + A
+        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
+
+        /* Symmetrize A */
+        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
+    }
+
+    // A = I + A
+    add_identity(cublasH, A, n);
+    // A = 0.5 * A
+    CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
+
+    /* Multiply the original matrix by A */
+    // W = A_origin * A
+    convert_double_to_float(mat, A2, nn);
+    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
+
+    /* Symmetrize W */
+    symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+
+    /* Copy the result back to mat */
+    convert_float_to_double(A3, mat, nn);
+
+    /* Free device memory */
+    CHECK_CUDA( cudaFree(A) );
+    CHECK_CUDA( cudaFree(A2) );
+    CHECK_CUDA( cudaFree(A3) );
+}
+
+std::chrono::duration<double> newton_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    size_t nn = n * n;
+    
+    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, dA_psd, n, &lo, &up
+    );
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+
+    newton_FP32(
+        cublasH, dA_psd, n, 0
+    );
+
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    return std::chrono::high_resolution_clock::now() - start;
+}
+
+/* newton TF16 */
+void newton_TF16(
+    cublasHandle_t cublasH,
+    double* mat,
+    const int n
+) {
+    const int nn = n * n;
+
+    /* Allocations */
+    // device memory
+    float *A, *A2, *A3;
+    CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
+
+    __half *hA, *hA2, *hA3;
+    CHECK_CUDA(cudaMalloc(&hA,  nn * sizeof(__half)));
+    CHECK_CUDA(cudaMalloc(&hA2, nn * sizeof(__half)));
+    CHECK_CUDA(cudaMalloc(&hA3, nn * sizeof(__half)));
+
+    // useful constants
+    const float half       =  0.5f;
+    const float one        =  1.0f;
+    const float minus_half = -0.5f;
+    const float one_n_half =  1.5f;
+    const float zero       =  0.0f;
+
+    convert_double_to_float(mat, A, nn);
+
+    /* Smoothing function */
+    for (int i = 0; i < 10; i++) {
+        // A2 = A * A
+        convert_float_to_half4(A, hA, nn);
+        CHECK_CUBLAS(cublasGemmEx(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, hA, CUDA_R_16F, n, hA, CUDA_R_16F, n, &zero, A2, CUDA_R_32F, n, CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+        // A3 = A2 * A
+        convert_float_to_half4(A2, hA2, nn);
+        CHECK_CUBLAS(cublasGemmEx(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, hA, CUDA_R_16F, n, hA2, CUDA_R_16F, n, &zero, A3, CUDA_R_32F, n,CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+        /* Symmetrize A3 */
+        symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+
+        /* Compute A = 1.5 * A - 0.5 * A3 */
+        // A = 1.5 * A
+        CHECK_CUBLAS( cublasSscal(cublasH, nn, &one_n_half, A, 1) );
+        // A = -0.5 * A3 + A
+        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
+
+        /* Symmetrize A */
+        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
+    }
+
+    add_identity(cublasH, A, n);
+    // A = 0.5 * A
+    CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
+
+    /* Multiply the original matrix by A */
+    convert_double_to_float(mat, A2, nn);
+    convert_float_to_half4(A, hA, nn);
+    convert_float_to_half4(A2, hA2, nn);
+    CHECK_CUBLAS(cublasGemmEx(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, hA2, CUDA_R_16F, n, hA, CUDA_R_16F, n, &zero, A3, CUDA_R_32F, n, CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+    /* Symmetrize W */
+    symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+
+    /* Copy the result back to mat */
+    convert_float_to_double(A3, mat, nn);
+
+    /* Free device memory */
+    CHECK_CUDA( cudaFree(A) );
+    CHECK_CUDA( cudaFree(A2) );
+    CHECK_CUDA( cudaFree(A3) );
+    CHECK_CUDA( cudaFree(hA) );
+    CHECK_CUDA( cudaFree(hA2) );
+    CHECK_CUDA( cudaFree(hA3) );
+}
+
+std::chrono::duration<double> newton_TF16_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
+    auto start = std::chrono::high_resolution_clock::now();
+    size_t nn = n * n;
+    
+    CHECK_CUDA(cudaMemcpy(dA_psd, dA_orig, nn * sizeof(double), cudaMemcpyDeviceToDevice));
+
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, dA_psd, n, &lo, &up
+    );
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_psd, 1) );
+
+    newton_TF16(
+        cublasH, dA_psd, n
+    );
+
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_psd, 1) );
+
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    return std::chrono::high_resolution_clock::now() - start;
+}
+/* -------------------------------------------------------- */
+
 
 void append_csv(
     const std::string& filename,
@@ -2769,6 +3204,108 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\tcomposite TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
             append_csv(psd_output_file, "composite TF16", dataset, n, duration, error);
+
+            /* ----------------- baselines ------------------- */
+            // polar express FP32
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += polarexpress_FP32_psd(solverH, cublasH_TF16, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tpolarexpress FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "polarexpress FP32", dataset, n, duration, error);
+
+            // polar express TF16
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += polarexpress_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tpolarexpress TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "polarexpress TF16", dataset, n, duration, error);
+
+            // newton FP32
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += newton_FP32_psd(solverH, cublasH_TF16, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tnewton FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "newton FP32", dataset, n, duration, error);
+
+            // newton TF16
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += newton_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tnewton TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "newton TF16", dataset, n, duration, error);
+            /* ----------------------------------------------- */
 
             // // haoyu FP32
             // duration = std::chrono::duration<double>(0.0);
