@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <assert.h>
+#include <cuda.h>
 
 #define RUN_PURE_TESTS false
 #define K_DEFLATE 30 // must be greater than 0, otherwise use non-deflate versions
@@ -662,6 +663,7 @@ void haoyu_FP32(
     return;
 }
 
+#if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
 void composite_FP32_emulated(
     cublasHandle_t cublasH,
     double* mat,
@@ -884,6 +886,7 @@ void composite_FP32_emulated(
     CHECK_CUDA( cudaFree(A2) );
     CHECK_CUDA( cudaFree(A3) );
 }
+#endif
 
 void composite_FP32(
     cublasHandle_t cublasH,
@@ -1603,6 +1606,7 @@ std::chrono::duration<double> composite_FP32_psd(cusolverDnHandle_t solverH, cub
     return std::chrono::high_resolution_clock::now() - start;
 }
 
+#if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
 std::chrono::duration<double> composite_FP32_emulated_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
     auto start = std::chrono::high_resolution_clock::now();
     size_t nn = n * n;
@@ -1629,6 +1633,7 @@ std::chrono::duration<double> composite_FP32_emulated_psd(cusolverDnHandle_t sol
 
     return std::chrono::high_resolution_clock::now() - start;
 }
+#endif
 
 // std::chrono::duration<double> composite_FP32_psd_deflate(cusolverDnHandle_t solverH, cublasHandle_t cublasH, const double* dA_orig, double* dA_psd, size_t n) {
 //     auto start = std::chrono::high_resolution_clock::now();
@@ -2688,6 +2693,7 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
             append_csv(psd_output_file, "composite FP32", dataset, n, duration, error);
 
+            #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
             // composite FP32 emulated
             duration = std::chrono::duration<double>(0.0);
             error = 0.0;
@@ -2712,6 +2718,7 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\tcomposite FP32 emulated -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
             append_csv(psd_output_file, "composite FP32 emulated", dataset, n, duration, error);
+            #endif
 
             // // composite TF32
             // duration = std::chrono::duration<double>(0.0);
