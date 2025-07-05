@@ -968,7 +968,7 @@ void composite_FP32_emulated(
         float b = coeff[i][1];
         float c = coeff[i][2];
 
-        if (i < 3) {
+        if (i < 8) {
             a /= scale_factor;
             b /= scale_factor * scale_factor * scale_factor;
             c /= scale_factor * scale_factor * scale_factor * scale_factor 
@@ -1196,7 +1196,7 @@ void composite_FP32(
         float b = coeff[i][1];
         float c = coeff[i][2];
 
-        if (i < 3) {
+        if (i < 8) {
             a /= scale_factor;
             b /= scale_factor * scale_factor * scale_factor;
             c /= scale_factor * scale_factor * scale_factor * scale_factor 
