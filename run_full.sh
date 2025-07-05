@@ -13,11 +13,12 @@ datasets=("cauchy" "chebspec" "chow" "circul" "clement" "companion" "dingdong" "
 
 # removed: binomial (overflow), hadamard (power of 2), invhilb (overflow), neumann (sparse), poisson (sparse), rosser (power of 2), wathen (sparse), invol (overflow), pascal (overflow), vand (overflow), randsvd (timeout)
 
-# datasets=("hilb" "randcorr" "forsythe") 
+# datasets=("chow" "circul" "clement") 
 
 # datasets=("cauchy" "chebspec" "chow" "circul" "clement" "companion" "dingdong" "fiedler" "forsythe")
 
 instance_sizes=(5000 10000 20000)
+# instance_sizes=(10000)
 
 restarts=5
 gemmrestarts=1

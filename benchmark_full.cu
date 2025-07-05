@@ -3077,7 +3077,9 @@ int main(int argc, char* argv[]) {
                 std::cout << "\t\t           Total error: " << std::scientific << error << std::endl;
                 std::cout << "\t\t        Relative error: " << std::scientific << error / ref_norm << std::endl;
                 append_csv(gemm_output_file, "GEMM TF16", dataset, n, duration, error);
+
             }
+
 
             /* 2) PSD cone projection */
             std::cout << "\t PSD cone projection" << std::endl;
@@ -3169,7 +3171,7 @@ int main(int argc, char* argv[]) {
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += polarexpress_FP32_psd(solverH, cublasH_TF16, A, A_psd, n);
+                duration += polarexpress_FP32_psd(solverH, cublasH, A, A_psd, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error
@@ -3219,7 +3221,7 @@ int main(int argc, char* argv[]) {
             error = 0.0;
             for (int i = 0; i < restarts; ++i) {
                 CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += newton_FP32_psd(solverH, cublasH_TF16, A, A_psd, n);
+                duration += newton_FP32_psd(solverH, cublasH, A, A_psd, n);
                 CHECK_CUDA(cudaDeviceSynchronize());
 
                 // compute error
