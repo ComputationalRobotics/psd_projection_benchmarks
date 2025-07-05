@@ -1,426 +1,143 @@
-ERROR: results/psd_results.csv already exists and is not empty.
+WARNING: ./results/psd_results.csv already exists and is not empty.
 Warming up the GPU... done.
 
-DATASET 'chow' WITH INSTANCE SIZE 10000
+DATASET 'kahan' WITH INSTANCE SIZE 5000
 	 PSD cone projection
-Max and min eigenvalues: 5001.5, -0.5
-Max and min eigenvalues: 5001.5, -0.5
-Max and min eigenvalues: 5001.5, -0.5
-Max and min eigenvalues: 5001.5, -0.5
-Max and min eigenvalues: 5001.5, -0.5
-		 cuSOLVER FP64 -- Time: 7.338479e+00 s
+Max and min eigenvalues: 33.9127, -36.6473
+Max and min eigenvalues: 33.9127, -36.6473
+Max and min eigenvalues: 33.9127, -36.6473
+Max and min eigenvalues: 33.9127, -36.6473
+Max and min eigenvalues: 33.9127, -36.6473
+		 cuSOLVER FP64 -- Time: 8.700798e-01 s
 		        Relative error: 0.000000e+00
-		 cuSOLVER FP32 -- Time: 1.399134e+00 s
-		        Relative error: 7.987218e-05
-theta: 2.5015e+07, norm_ry: 3.3476e+07 
-up: 7.6479e+03 
-Upper bound: 7.647944e+03
-Kernel execution time: 1.567239e+03 ms
-theta: 2.5015e+07, norm_ry: 5.9831e+06 
-up: 5.5676e+03 
-Upper bound: 5.567597e+03
-Kernel execution time: 1.590000e+03 ms
-theta: 2.5015e+07, norm_ry: 3.4663e+07 
-up: 7.7251e+03 
-Upper bound: 7.725140e+03
-Kernel execution time: 1.575785e+03 ms
-theta: 2.5015e+07, norm_ry: 8.4739e+06 
-up: 5.7870e+03 
-Upper bound: 5.786957e+03
-Kernel execution time: 1.605068e+03 ms
-theta: 2.5015e+07, norm_ry: 2.3595e+06 
-up: 5.2321e+03 
-Upper bound: 5.232061e+03
-Kernel execution time: 1.603824e+03 ms
-		polarexpress FP32 -- Time: 1.711635e+00 s
-		        Relative error: 3.598256e-04
-theta: 2.5015e+07, norm_ry: 2.0686e+07 
-up: 6.7603e+03 
-Upper bound: 6.760274e+03
-theta: 2.5015e+07, norm_ry: 3.9762e+06 
-up: 5.3843e+03 
-Upper bound: 5.384350e+03
-theta: 2.5015e+07, norm_ry: 4.8000e+06 
-up: 5.4603e+03 
-Upper bound: 5.460311e+03
-theta: 2.5015e+07, norm_ry: 3.3968e+07 
-up: 7.6800e+03 
-Upper bound: 7.680048e+03
-theta: 2.5015e+07, norm_ry: 3.2267e+07 
-up: 7.5685e+03 
-Upper bound: 7.568456e+03
-		polarexpress TF16 -- Time: 4.072422e-01 s
-		        Relative error: 3.881125e-03
-theta: 2.5015e+07, norm_ry: 3.5359e+07 
-up: 7.7701e+03 
-Upper bound: 7.770055e+03
-theta: 2.5015e+07, norm_ry: 2.5010e+07 
-up: 7.0728e+03 
-Upper bound: 7.072835e+03
-theta: 2.5015e+07, norm_ry: 2.5010e+07 
-up: 7.0728e+03 
-Upper bound: 7.072835e+03
-theta: 2.5015e+07, norm_ry: 4.6035e+06 
-up: 5.4423e+03 
-Upper bound: 5.442287e+03
-theta: 2.5015e+07, norm_ry: 3.1658e+07 
-up: 7.5281e+03 
-Upper bound: 7.528114e+03
-		newton FP32 -- Time: 1.653010e+00 s
-		        Relative error: 7.985567e-03
-theta: 2.5015e+07, norm_ry: 2.6777e+07 
-up: 7.1967e+03 
-Upper bound: 7.196700e+03
-theta: 2.5015e+07, norm_ry: 7.3083e+05 
-up: 5.0740e+03 
-Upper bound: 5.074035e+03
-theta: 2.5015e+07, norm_ry: 7.8350e+06 
-up: 5.7315e+03 
-Upper bound: 5.731491e+03
-theta: 2.5015e+07, norm_ry: 3.5322e+07 
-up: 7.7677e+03 
-Upper bound: 7.767666e+03
-theta: 2.5015e+07, norm_ry: 3.7633e+06 
-up: 5.3645e+03 
-Upper bound: 5.364542e+03
-		newton TF16 -- Time: 4.138155e-01 s
-		        Relative error: 8.558842e-03
-theta: 2.5015e+07, norm_ry: 1.1738e+07 
-up: 6.0625e+03 
-Upper bound: 6.062460e+03
-Kernel execution time: 1.698404e+03 ms
-theta: 2.5015e+07, norm_ry: 2.5010e+07 
-up: 7.0728e+03 
-Upper bound: 7.072835e+03
-Kernel execution time: 1.699008e+03 ms
-theta: 2.5015e+07, norm_ry: 3.2759e+07 
-up: 7.6009e+03 
-Upper bound: 7.600938e+03
-Kernel execution time: 1.704191e+03 ms
-theta: 2.5015e+07, norm_ry: 3.3050e+07 
-up: 7.6201e+03 
-Upper bound: 7.620069e+03
-Kernel execution time: 1.709133e+03 ms
-theta: 2.5015e+07, norm_ry: 2.5010e+07 
-up: 7.0728e+03 
-Upper bound: 7.072835e+03
-Kernel execution time: 1.712858e+03 ms
-		composite FP32 -- Time: 1.832461e+00 s
-		        Relative error: 2.779263e-04
-theta: 2.5015e+07, norm_ry: 3.3456e+07 
-up: 7.6466e+03 
-Upper bound: 7.646628e+03
-theta: 2.5015e+07, norm_ry: 3.4874e+07 
-up: 7.7388e+03 
-Upper bound: 7.738795e+03
-theta: 2.5015e+07, norm_ry: 2.8522e+07 
-up: 7.3169e+03 
-Upper bound: 7.316931e+03
-theta: 2.5015e+07, norm_ry: 1.2254e+07 
-up: 6.1048e+03 
-Upper bound: 6.104843e+03
-theta: 2.5015e+07, norm_ry: 3.5367e+07 
-up: 7.7706e+03 
-Upper bound: 7.770556e+03
-		composite FP32 emulated -- Time: 1.858031e+00 s
-		        Relative error: 5.387232e-04
-theta: 2.5015e+07, norm_ry: 3.3209e+06 
-up: 5.3232e+03 
-Upper bound: 5.323151e+03
-theta: 2.5015e+07, norm_ry: 6.6144e+05 
-up: 5.0672e+03 
-Upper bound: 5.067193e+03
-theta: 2.5015e+07, norm_ry: 2.8684e+07 
-up: 7.3279e+03 
-Upper bound: 7.327935e+03
-theta: 2.5015e+07, norm_ry: 1.0454e+07 
-up: 5.9556e+03 
-Upper bound: 5.955551e+03
-theta: 2.5015e+07, norm_ry: 3.4747e+07 
-up: 7.7306e+03 
-Upper bound: 7.730609e+03
-		composite TF16 -- Time: 4.114562e-01 s
-		        Relative error: 2.308609e-03
+		 cuSOLVER FP32 -- Time: 1.527511e-01 s
+		        Relative error: 7.516539e-06
+theta: 1.3430e+03, norm_ry: 1.3797e+03 
+up: 5.2180e+01 
+Upper bound: 5.217951e+01
+Kernel execution time: 1.628774e+02 ms
+theta: 1.3431e+03, norm_ry: 2.0207e+02 
+up: 3.9308e+01 
+Upper bound: 3.930818e+01
+Kernel execution time: 1.674803e+02 ms
+theta: 1.3435e+03, norm_ry: 1.4018e+03 
+up: 5.2396e+01 
+Upper bound: 5.239576e+01
+Kernel execution time: 1.653606e+02 ms
+theta: 1.3431e+03, norm_ry: 1.9782e+03 
+up: 5.7630e+01 
+Upper bound: 5.763038e+01
+Kernel execution time: 1.679339e+02 ms
+theta: 1.3430e+03, norm_ry: 1.3883e+03 
+up: 5.2262e+01 
+Upper bound: 5.226243e+01
+Kernel execution time: 1.698611e+02 ms
+		polarexpress FP32 -- Time: 1.934528e-01 s
+		        Relative error: 5.063335e-04
+theta: 1.3430e+03, norm_ry: 1.7398e+03 
+up: 5.5524e+01 
+Upper bound: 5.552378e+01
+theta: 1.3430e+03, norm_ry: 1.6961e+03 
+up: 5.5128e+01 
+Upper bound: 5.512826e+01
+theta: 1.3431e+03, norm_ry: 1.9358e+03 
+up: 5.7262e+01 
+Upper bound: 5.726193e+01
+theta: 1.3432e+03, norm_ry: 2.4300e+02 
+up: 3.9827e+01 
+Upper bound: 3.982665e+01
+theta: 1.3438e+03, norm_ry: 4.4446e+02 
+up: 4.2288e+01 
+Upper bound: 4.228816e+01
+		polarexpress TF16 -- Time: 7.126042e-02 s
+		        Relative error: 1.221009e-03
+theta: 1.3433e+03, norm_ry: 1.3819e+03 
+up: 5.2203e+01 
+Upper bound: 5.220347e+01
+theta: 1.3431e+03, norm_ry: 1.5333e+03 
+up: 5.3632e+01 
+Upper bound: 5.363207e+01
+theta: 1.3432e+03, norm_ry: 1.2922e+03 
+up: 5.1336e+01 
+Upper bound: 5.133644e+01
+theta: 1.3431e+03, norm_ry: 8.4616e+02 
+up: 4.6789e+01 
+Upper bound: 4.678899e+01
+theta: 1.3432e+03, norm_ry: 1.9884e+03 
+up: 5.7720e+01 
+Upper bound: 5.772013e+01
+		newton FP32 -- Time: 2.025969e-01 s
+		        Relative error: 2.258081e-03
+theta: 1.3434e+03, norm_ry: 1.9529e+03 
+up: 5.7413e+01 
+Upper bound: 5.741339e+01
+theta: 1.3434e+03, norm_ry: 1.1644e+02 
+up: 3.8207e+01 
+Upper bound: 3.820730e+01
+theta: 1.3431e+03, norm_ry: 2.2824e+03 
+up: 6.0212e+01 
+Upper bound: 6.021170e+01
+theta: 1.3431e+03, norm_ry: 1.9217e+03 
+up: 5.7139e+01 
+Upper bound: 5.713854e+01
+theta: 1.3431e+03, norm_ry: 1.3789e+02 
+up: 3.8483e+01 
+Upper bound: 3.848310e+01
+		newton TF16 -- Time: 7.107121e-02 s
+		        Relative error: 1.624337e-02
+theta: 1.3431e+03, norm_ry: 1.7342e+02 
+up: 3.8942e+01 
+Upper bound: 3.894246e+01
+theta: 1.3432e+03, norm_ry: 1.3748e+03 
+up: 5.2134e+01 
+Upper bound: 5.213443e+01
+theta: 1.3430e+03, norm_ry: 1.5676e+03 
+up: 5.3951e+01 
+Upper bound: 5.395069e+01
+theta: 1.3432e+03, norm_ry: 1.3435e+03 
+up: 5.1834e+01 
+Upper bound: 5.183393e+01
+theta: 1.3431e+03, norm_ry: 1.4954e+03 
+up: 5.3278e+01 
+Upper bound: 5.327805e+01
+		composite FP32 -- Time: 1.942942e-01 s
+		        Relative error: 1.082234e-03
+theta: 1.3432e+03, norm_ry: 1.6477e+03 
+up: 5.4689e+01 
+Upper bound: 5.468894e+01
+theta: 1.3431e+03, norm_ry: 1.4388e+03 
+up: 5.2744e+01 
+Upper bound: 5.274404e+01
+theta: 1.3431e+03, norm_ry: 1.5170e+03 
+up: 5.3480e+01 
+Upper bound: 5.347988e+01
+theta: 1.3433e+03, norm_ry: 1.9465e+03 
+up: 5.7356e+01 
+Upper bound: 5.735647e+01
+theta: 1.3431e+03, norm_ry: 3.8147e+02 
+up: 4.1528e+01 
+Upper bound: 4.152804e+01
+		composite FP32 emulated -- Time: 1.955855e-01 s
+		        Relative error: 2.147166e-03
+theta: 1.3433e+03, norm_ry: 1.0539e+03 
+up: 4.8961e+01 
+Upper bound: 4.896146e+01
+theta: 1.3432e+03, norm_ry: 1.4070e+03 
+up: 5.2442e+01 
+Upper bound: 5.244217e+01
+theta: 1.3434e+03, norm_ry: 1.2841e+01 
+up: 3.6827e+01 
+Upper bound: 3.682693e+01
+theta: 1.3432e+03, norm_ry: 1.9342e+03 
+up: 5.7249e+01 
+Upper bound: 5.724928e+01
+theta: 1.3431e+03, norm_ry: 1.6350e+03 
+up: 5.4572e+01 
+Upper bound: 5.457210e+01
+		composite TF16 -- Time: 6.151669e-02 s
+		        Relative error: 1.214913e-03
 
-DATASET 'circul' WITH INSTANCE SIZE 10000
+DATASET 'kahan' WITH INSTANCE SIZE 10000
 	 PSD cone projection
-Max and min eigenvalues: 5.000500e+07, -5.000000e+03
-Max and min eigenvalues: 5.000500e+07, -5.000000e+03
-Max and min eigenvalues: 5.000500e+07, -5.000000e+03
-Max and min eigenvalues: 5.000500e+07, -5.000000e+03
-Max and min eigenvalues: 5.000500e+07, -5.000000e+03
-		 cuSOLVER FP64 -- Time: 5.659118e+00 s
-		        Relative error: 0.000000e+00
-		 cuSOLVER FP32 -- Time: 1.113227e+00 s
-		        Relative error: 1.708780e-06
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.558849e+03 ms
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.570488e+03 ms
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.572004e+03 ms
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.576079e+03 ms
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.576816e+03 ms
-		polarexpress FP32 -- Time: 1.658865e+00 s
-		        Relative error: 2.685298e-04
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-		polarexpress TF16 -- Time: 3.801493e-01 s
-		        Relative error: 3.840774e-03
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-		newton FP32 -- Time: 1.647240e+00 s
-		        Relative error: 4.844519e-03
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-		newton TF16 -- Time: 3.986324e-01 s
-		        Relative error: 5.009469e-03
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.650030e+03 ms
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.659364e+03 ms
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.663445e+03 ms
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.664434e+03 ms
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-Kernel execution time: 1.670495e+03 ms
-		composite FP32 -- Time: 1.756582e+00 s
-		        Relative error: 2.154235e-04
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-		composite FP32 emulated -- Time: 1.770898e+00 s
-		        Relative error: 6.486860e-05
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-theta: 2.5005e+15, norm_ry: 2.5005e+15 
-up: 7.0718e+07 
-Upper bound: 7.071775e+07
-		composite TF16 -- Time: 3.842457e-01 s
-		        Relative error: 3.203878e-03
-
-DATASET 'clement' WITH INSTANCE SIZE 10000
-	 PSD cone projection
-Max and min eigenvalues: 1.000000e+04, -1.000000e+04
-Max and min eigenvalues: 1.000000e+04, -1.000000e+04
-Max and min eigenvalues: 1.000000e+04, -1.000000e+04
-Max and min eigenvalues: 1.000000e+04, -1.000000e+04
-Max and min eigenvalues: 1.000000e+04, -1.000000e+04
-		 cuSOLVER FP64 -- Time: 7.285164e+00 s
-		        Relative error: 0.000000e+00
-		 cuSOLVER FP32 -- Time: 1.169083e+00 s
-		        Relative error: 4.483599e-06
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-Kernel execution time: 1.599576e+03 ms
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-Kernel execution time: 1.599409e+03 ms
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-Kernel execution time: 1.604510e+03 ms
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-Kernel execution time: 1.611461e+03 ms
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-Kernel execution time: 1.617286e+03 ms
-		polarexpress FP32 -- Time: 1.726780e+00 s
-		        Relative error: 2.396534e-06
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414162e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-		polarexpress TF16 -- Time: 3.766200e-01 s
-		        Relative error: 4.007864e-04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414165e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414162e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-		newton FP32 -- Time: 1.580941e+00 s
-		        Relative error: 3.697126e-05
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-		newton TF16 -- Time: 3.750350e-01 s
-		        Relative error: 7.961890e-04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-Kernel execution time: 1.655699e+03 ms
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-Kernel execution time: 1.656709e+03 ms
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414162e+04
-Kernel execution time: 1.658511e+03 ms
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-Kernel execution time: 1.661684e+03 ms
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-Kernel execution time: 1.668049e+03 ms
-		composite FP32 -- Time: 1.781330e+00 s
-		        Relative error: 2.817254e-06
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414162e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414165e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-		composite FP32 emulated -- Time: 1.797138e+00 s
-		        Relative error: 2.815414e-06
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414163e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-theta: 9.9998e+07, norm_ry: 9.9988e+07 
-up: 1.4142e+04 
-Upper bound: 1.414164e+04
-		composite TF16 -- Time: 3.954453e-01 s
-		        Relative error: 3.124884e-04
-
+Max and min eigenvalues: 4.857849e+01, -5.131496e+01
+Max and min eigenvalues: 4.857849e+01, -5.131496e+01
