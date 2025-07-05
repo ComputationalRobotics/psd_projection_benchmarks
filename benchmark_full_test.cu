@@ -14,7 +14,6 @@
 #include <iomanip>
 #include <assert.h>
 #include <cuda.h>
-#include <random>
 
 #define RUN_PURE_TESTS false
 #define K_DEFLATE 30 // must be greater than 0, otherwise use non-deflate versions
@@ -63,20 +62,6 @@ do {                                                                           \
               cusparseGetErrorString(status), status, __FILE__, __LINE__);     \
         std::cout << std::endl;                                                \
     }                                                                          \
-}
-
-unsigned long make_seed()
-{
-    std::random_device rd;
-
-    std::seed_seq seq{
-        rd(), rd(), rd(), rd(),
-        static_cast<unsigned>(std::chrono::high_resolution_clock::now()
-                              .time_since_epoch().count())   // mixes in time
-    };
-
-    std::mt19937_64 mixer(seq);   // 64-bit Mersenne Twister
-    return mixer();               // one well-mixed 64-bit value
 }
 
 void symmetrizeFloat(
@@ -332,7 +317,7 @@ void approximate_two_norm(
 
     /* Initial vector */
     // q = randn(n, 1)
-    fill_random(q, n, make_seed());
+    fill_random(q, n, 0);
 
     // read from a txt file for debug
     // std::ifstream q_file("q.txt");
@@ -482,12 +467,12 @@ void approximate_two_norm(
     CHECK_CUDA(cudaDeviceSynchronize());
 
     // print eigenvalues for debugging
-    // std::vector<double> eigenvalues(nb_iter);
-    // CHECK_CUDA(cudaMemcpy(eigenvalues.data(), d_eigenvalues, nb_iter * sizeof(double), cudaMemcpyDeviceToHost));
+    std::vector<double> eigenvalues(nb_iter);
+    CHECK_CUDA(cudaMemcpy(eigenvalues.data(), d_eigenvalues, nb_iter * sizeof(double), cudaMemcpyDeviceToHost));
     // std::cout << "Eigenvalues: ";
-    // for (const auto& ev : eigenvalues) {
-    //     std::cout << ev << "\n";
-    // }
+    for (const auto& ev : eigenvalues) {
+        // std::cout << ev << "\n";
+    }
     // std::cout << std::endl;
 
     // retrieve the max eigenvalue and corresponding eigenvector
@@ -532,9 +517,9 @@ void approximate_two_norm(
     // up = sqrt(theta + norm(ry))
     double norm_ry;
     CHECK_CUBLAS(cublasDnrm2(cublasH, n, ry, 1, &norm_ry));
-    printf("theta: %5.4e, norm_ry: %5.4e \n", theta, norm_ry);
+    // printf("theta: %5.4e, norm_ry: %5.4e \n", theta, norm_ry);
     *up = std::sqrt(theta + norm_ry);
-    printf("up: %5.4e \n", *up);
+    // printf("up: %5.4e \n", *up);
 
     /* Free memory */
     CHECK_CUDA(cudaFree(V));
@@ -553,7 +538,7 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(ry));
     CHECK_CUDA(cudaDeviceSynchronize());
 
-    std::cout << "Upper bound: " << *up << std::endl;
+    // std::cout << "Upper bound: " << *up << std::endl;
 
     return;
 }
@@ -920,7 +905,9 @@ void composite_FP32(
 
     // useful constants
     const float half       =  0.5f;
+    const float minus_half = -0.5f;
     const float one        =  1.0f;
+    const float one_n_half =  1.5f;
     const float zero       =  0.0f;
 
     /* Convert the initial matrix*/
@@ -955,19 +942,19 @@ void composite_FP32(
     //     { 1.907795624713394,  -1.285976165390910,   0.378615420076569 },
     //     { 1.875011744441277,  -1.250013049314579,   0.375001304931425 }
     // }; const size_t smoothing_steps = 0; // pre-lunch
-    std::vector<std::vector<float>> coeff = {
-        { 8.509885302586273, -25.264304190830892,  18.753567899739625 },
-        { 4.249573478922877,   -3.154976488114228,   0.585884782491327 },
-        { 4.225122190777846,   -3.138044435084575,   0.583953455129916 },
-        { 4.124838686994395,   -3.068332452805990,   0.576002953645695 },
-        { 3.758010335802897,   -2.809273892403287,   0.546484206587685 },
-        { 2.856177541291611,   -2.134056233175483,   0.470110769180275 },
-        { 2.020600415776305,   -1.403721150466785,   0.390673896852026 },
-        { 1.875875100481076,   -1.250971990481385,   0.375097212342072 },
-        { 1.875,   -1.25,   0.375},
-        { 1.875,   -1.25,   0.375},
-    }; // post-lunch: 
     // const std::vector<std::vector<float>> coeff = {
+    //     { 8.509885302586273, -25.264304190830892,  18.753567899739625 },
+    //     { 4.249573478922877,   -3.154976488114228,   0.585884782491327 },
+    //     { 4.225122190777846,   -3.138044435084575,   0.583953455129916 },
+    //     { 4.124838686994395,   -3.068332452805990,   0.576002953645695 },
+    //     { 3.758010335802897,   -2.809273892403287,   0.546484206587685 },
+    //     { 2.856177541291611,   -2.134056233175483,   0.470110769180275 },
+    //     { 2.020600415776305,   -1.403721150466785,   0.390673896852026 },
+    //     { 1.875875100481076,   -1.250971990481385,   0.375097212342072 },
+    //     { 1.875,   -1.25,   0.375},
+    //     { 1.875,   -1.25,   0.375},
+    // }; const size_t smoothing_steps = 0; // post-lunch: 
+        // const std::vector<std::vector<float>> coeff = {
     //     { 8.5013839187, -25.2390651257, 18.7348330667 },
     //     { 4.2453281508, -3.1518246635, 0.5852994830 },
     //     { 4.2209012895, -3.1349095256, 0.5833700850 },
@@ -979,10 +966,21 @@ void composite_FP32(
     //     { 1.8731268731, -1.2487512488, 0.3746253746 },
     //     { 1.8731268731, -1.2487512488, 0.3746253746 },
     // }; const size_t smoothing_steps = 0;
+    const std::vector<std::vector<float>> coeff ={
+    { 8.5117053694, -25.2637545356, 18.7518511505 },
+    { 4.2514746568,  -3.1551482052,  0.5855654848 },
+    { 4.2314443096,  -3.1432483391,  0.5844187862 },
+    { 4.1462871213,  -3.0853187659,  0.5781140029 },
+    { 3.8679345846,  -2.8863505270,  0.5573798771 },
+    { 3.0735744409,  -2.2984793859,  0.4942218088 },
+    { 2.1692233704,  -1.5420827375,  0.4146319529 },
+    { 2.0078578610,  -1.3793846146,  0.3989298303 },
+    { 2.0029525899,  -1.3743625171,  0.3982429919 },
+    { 1.8780193554,  -1.2544181003,  0.3764365891 }}; const size_t smoothing_steps = 0; 
 
-    float scale_factor = 1.0001f;
+    float scale_factor = 1.001f;
 
-    // change coefficients first
+    /* Approximation of the step function */
     for (int i = 0; i < coeff.size(); i++) {
         float a = coeff[i][0];
         float b = coeff[i][1];
@@ -994,23 +992,6 @@ void composite_FP32(
             c /= scale_factor * scale_factor * scale_factor * scale_factor 
                 * scale_factor;
         }
-
-        coeff[i][0] = a;
-        coeff[i][1] = b;
-        coeff[i][2] = c;
-    }
-
-    /* DEBUG: timing */ 
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    cudaEventRecord(start);
-
-    /* Approximation of the step function */
-    for (int i = 0; i < coeff.size(); i++) {
-        float a = coeff[i][0];
-        float b = coeff[i][1];
-        float c = coeff[i][2];
 
         /* Compute the powers of A*/
         // A2 = A * A
@@ -1032,12 +1013,26 @@ void composite_FP32(
         symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
     }
 
-    /* DEBUG: timing */ 
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    std::cout << "Kernel execution time: " << milliseconds << " ms\n";
+    /* Smoothing function */
+    for (int i = 0; i < smoothing_steps; i++) {
+        // A2 = A * A
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
+
+        // A3 = A2 * A
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
+
+        /* Symmetrize A3 */
+        symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+
+        /* Compute A = 1.5 * A - 0.5 * A3 */
+        // A = 1.5 * A
+        CHECK_CUBLAS( cublasSscal(cublasH, nn, &one_n_half, A, 1) );
+        // A = -0.5 * A3 + A
+        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
+
+        /* Symmetrize A */
+        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
+    }
 
     // A = I + A
     add_identity(cublasH, A, n);
@@ -1104,7 +1099,7 @@ void composite_TF16(
     //     { 2.4827239537, -1.7941788274, 0.4146530436 }, 
     // };
 
-    const std::vector<std::vector<float>> coeff = { 
+    std::vector<std::vector<float>> coeff = { 
         { 8.3937001154, -23.7945582332, 16.8758390904 }, 
         { 4.1803895500, -2.9788012917, 0.5318143742 }, 
         { 4.0578478573, -2.9013956514, 0.5233571836 }, 
@@ -1364,9 +1359,9 @@ std::chrono::duration<double> cusolver_FP64_psd(cusolverDnHandle_t solverH, cubl
     std::vector<double> W_h(n);
     CHECK_CUDA(cudaMemcpy(W_h.data(), dW, n*sizeof(double), cudaMemcpyDeviceToHost));
 
-    std::cout << "Max and min eigenvalues: "
-              << *std::max_element(W_h.begin(), W_h.end()) << ", "
-              << *std::min_element(W_h.begin(), W_h.end()) << std::endl;
+    // std::cout << "Max and min eigenvalues: "
+    //           << *std::max_element(W_h.begin(), W_h.end()) << ", "
+    //           << *std::min_element(W_h.begin(), W_h.end()) << std::endl;
 
     for(int i=0;i<n;i++) if(W_h[i]<0) W_h[i]=0;
 
@@ -2230,7 +2225,9 @@ void polarexpress_FP32(
 
     // useful constants
     const float half       =  0.5f;
+    const float minus_half = -0.5f;
     const float one        =  1.0f;
+    const float one_n_half =  1.5f;
     const float zero       =  0.0f;
 
     /* Convert the initial matrix*/
@@ -2246,53 +2243,14 @@ void polarexpress_FP32(
         {1.8564430512944288, -1.2132457535214525, 0.3568004238203446},
         {1.8564364186731164, -1.2132392045600955, 0.3568003776956684},
         {1.8564311666088567, -1.2132289074471427, 0.35679533060704244},
-        {1.8564311659068637, -1.2132289060708275, 0.3567953299324476},
+        {1.8564311659068637, -1.2132289060708275, 0.3567953299324476}
     }; 
-
-    // std::vector<std::vector<float>> coeff = {
-    //     { 8.509885302586273, -25.264304190830892,  18.753567899739625 },
-    //     { 4.249573478922877,   -3.154976488114228,   0.585884782491327 },
-    //     { 4.225122190777846,   -3.138044435084575,   0.583953455129916 },
-    //     { 4.124838686994395,   -3.068332452805990,   0.576002953645695 },
-    //     { 3.758010335802897,   -2.809273892403287,   0.546484206587685 },
-    //     { 2.856177541291611,   -2.134056233175483,   0.470110769180275 },
-    //     { 2.020600415776305,   -1.403721150466785,   0.390673896852026 },
-    //     { 1.875875100481076,   -1.250971990481385,   0.375097212342072 },
-    //     { 1.875,   -1.25,   0.375},
-    //     { 1.875,   -1.25,   0.375},
-    // }; // post-lunch: 
-    // float scale_factor = 1.0001f;
-    // // change coefficients first
-    // for (int i = 0; i < coeff.size(); i++) {
-    //     float a = coeff[i][0];
-    //     float b = coeff[i][1];
-    //     float c = coeff[i][2];
-
-    //     if (i < 3) {
-    //         a /= scale_factor;
-    //         b /= scale_factor * scale_factor * scale_factor;
-    //         c /= scale_factor * scale_factor * scale_factor * scale_factor 
-    //             * scale_factor;
-    //     }
-
-    //     coeff[i][0] = a;
-    //     coeff[i][1] = b;
-    //     coeff[i][2] = c;
-    // }
-
-    /* DEBUG: timing */ 
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-    cudaEventRecord(start);
 
     /* Approximation of the step function */
     for (int i = 0; i < coeff.size(); i++) {
         float a = coeff[i][0];
         float b = coeff[i][1];
         float c = coeff[i][2];
-
-        // printf("i: %d, a: %5.4e, b: %5.4e, c: %5.4e \n", i, a, b, c);
 
         /* Compute the powers of A*/
         // A2 = A * A
@@ -2313,13 +2271,6 @@ void polarexpress_FP32(
         /* Symmetrize A */
         symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
     }
-
-    /* DEBUG: timing */ 
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    std::cout << "Kernel execution time: " << milliseconds << " ms\n";
 
     // A = I + A
     add_identity(cublasH, A, n);
@@ -2608,6 +2559,7 @@ void newton_TF16(
     // useful constants
     const float half       =  0.5f;
     const float one        =  1.0f;
+    const float zero       =  0.0f;
     const float minus_half = -0.5f;
     const float one_n_half =  1.5f;
     const float zero       =  0.0f;
@@ -2688,7 +2640,7 @@ std::chrono::duration<double> newton_TF16_psd(cusolverDnHandle_t solverH, cublas
 
     return std::chrono::high_resolution_clock::now() - start;
 }
-/* -------------------------------------------------------- */
+/* ------------------------------------------------------- */
 
 
 void append_csv(
@@ -3163,108 +3115,6 @@ int main(int argc, char* argv[]) {
             // std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
             // append_csv(psd_output_file, "composite FP64", dataset, n, duration, error);
 
-            /* ----------------- baselines ------------------- */
-            // polar express FP32
-            duration = std::chrono::duration<double>(0.0);
-            error = 0.0;
-            for (int i = 0; i < restarts; ++i) {
-                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += polarexpress_FP32_psd(solverH, cublasH_TF16, A, A_psd, n);
-                CHECK_CUDA(cudaDeviceSynchronize());
-
-                // compute error
-                CHECK_CUBLAS(cublasDgeam(
-                    cublasH,
-                    CUBLAS_OP_N, CUBLAS_OP_N,
-                    n, n,
-                    &one,  A_psd_ref, n,
-                    &neg1, A_psd, n,
-                    A_diff,       n));
-                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
-                error += final_err / ref_norm;
-            }
-            duration /= restarts;
-            error /= restarts;
-            std::cout << "\t\tpolarexpress FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
-            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
-            append_csv(psd_output_file, "polarexpress FP32", dataset, n, duration, error);
-
-            // polar express TF16
-            duration = std::chrono::duration<double>(0.0);
-            error = 0.0;
-            for (int i = 0; i < restarts; ++i) {
-                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += polarexpress_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
-                CHECK_CUDA(cudaDeviceSynchronize());
-
-                // compute error
-                CHECK_CUBLAS(cublasDgeam(
-                    cublasH,
-                    CUBLAS_OP_N, CUBLAS_OP_N,
-                    n, n,
-                    &one,  A_psd_ref, n,
-                    &neg1, A_psd, n,
-                    A_diff,       n));
-                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
-                error += final_err / ref_norm;
-            }
-            duration /= restarts;
-            error /= restarts;
-            std::cout << "\t\tpolarexpress TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
-            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
-            append_csv(psd_output_file, "polarexpress TF16", dataset, n, duration, error);
-
-            // newton FP32
-            duration = std::chrono::duration<double>(0.0);
-            error = 0.0;
-            for (int i = 0; i < restarts; ++i) {
-                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += newton_FP32_psd(solverH, cublasH_TF16, A, A_psd, n);
-                CHECK_CUDA(cudaDeviceSynchronize());
-
-                // compute error
-                CHECK_CUBLAS(cublasDgeam(
-                    cublasH,
-                    CUBLAS_OP_N, CUBLAS_OP_N,
-                    n, n,
-                    &one,  A_psd_ref, n,
-                    &neg1, A_psd, n,
-                    A_diff,       n));
-                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
-                error += final_err / ref_norm;
-            }
-            duration /= restarts;
-            error /= restarts;
-            std::cout << "\t\tnewton FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
-            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
-            append_csv(psd_output_file, "newton FP32", dataset, n, duration, error);
-
-            // newton TF16
-            duration = std::chrono::duration<double>(0.0);
-            error = 0.0;
-            for (int i = 0; i < restarts; ++i) {
-                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
-                duration += newton_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
-                CHECK_CUDA(cudaDeviceSynchronize());
-
-                // compute error
-                CHECK_CUBLAS(cublasDgeam(
-                    cublasH,
-                    CUBLAS_OP_N, CUBLAS_OP_N,
-                    n, n,
-                    &one,  A_psd_ref, n,
-                    &neg1, A_psd, n,
-                    A_diff,       n));
-                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
-                error += final_err / ref_norm;
-            }
-            duration /= restarts;
-            error /= restarts;
-            std::cout << "\t\tnewton TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
-            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
-            append_csv(psd_output_file, "newton TF16", dataset, n, duration, error);
-            /* ----------------------------------------------- */
-
             // composite FP32
             duration = std::chrono::duration<double>(0.0);
             error = 0.0;
@@ -3366,6 +3216,108 @@ int main(int argc, char* argv[]) {
             std::cout << "\t\tcomposite TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
             std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
             append_csv(psd_output_file, "composite TF16", dataset, n, duration, error);
+
+            /* ----------------- baselines ------------------- */
+            // polar express FP32
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += polarexpress_FP32_psd(solverH, cublasH_TF16, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tpolarexpress FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "polarexpress FP32", dataset, n, duration, error);
+
+            // polar express TF16
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += polarexpress_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tpolarexpress TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "polarexpress TF16", dataset, n, duration, error);
+
+            // newton FP32
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += newton_FP32_psd(solverH, cublasH_TF16, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tnewton FP32 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "newton FP32", dataset, n, duration, error);
+
+            // newton TF16
+            duration = std::chrono::duration<double>(0.0);
+            error = 0.0;
+            for (int i = 0; i < restarts; ++i) {
+                CHECK_CUDA(cudaMemset(A_psd, 0, nn * sizeof(double)));
+                duration += newton_TF16_psd(solverH, cublasH_TF16, A, A_psd, n);
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // compute error
+                CHECK_CUBLAS(cublasDgeam(
+                    cublasH,
+                    CUBLAS_OP_N, CUBLAS_OP_N,
+                    n, n,
+                    &one,  A_psd_ref, n,
+                    &neg1, A_psd, n,
+                    A_diff,       n));
+                CHECK_CUBLAS(cublasDnrm2(cublasH, nn, A_diff, 1, &final_err));
+                error += final_err / ref_norm;
+            }
+            duration /= restarts;
+            error /= restarts;
+            std::cout << "\t\tnewton TF16 -- Time: " << std::scientific << duration.count() << " s" << std::endl;
+            std::cout << "\t\t        Relative error: " << std::scientific << error << std::endl;
+            append_csv(psd_output_file, "newton TF16", dataset, n, duration, error);
+            /* ----------------------------------------------- */
 
             // // haoyu FP32
             // duration = std::chrono::duration<double>(0.0);

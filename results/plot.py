@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
     # Load the data
     # df = pd.read_csv("results/saved/psd_results-B200.csv")
-    df = pd.read_csv("results/psd_results.csv")
+    df = pd.read_csv("results/saved/B200/psd_results-B200-2.csv")
     n_datasets = len(pd.unique(df["dataset"]))
     aspect = min(n_first_datasets, n_datasets) / 6
 
