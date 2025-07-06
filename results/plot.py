@@ -8,83 +8,182 @@ rc("text", usetex=True)
 
 datasets = ["cauchy", "chebspec", "chow", "circul", "clement", "companion", "dingdong", "fiedler", "forsythe", "frank", "golub", "grcar", "hankel", "hilb", "kahan", "kms", "lehmer", "lotkin", "magic", "minij", "moler", "oscillate", "parter", "pei", "prolate", "randcorr", "rando", "rohess", "sampling", "toeplitz", "tridiag", "triw", "wilkinson"]
 
-
 if __name__ == "__main__":
     n_first_datasets = len(datasets)
-    n = 5000
 
     # Load the data
-    # df = pd.read_csv("results/saved/psd_results-B200.csv")
-    df = pd.read_csv("results/psd_results.csv")
+    df = pd.read_csv("results/saved/B200/psd_final.csv")
     n_datasets = len(pd.unique(df["dataset"]))
-    aspect = min(n_first_datasets, n_datasets) / 6
+
+    # renames
+    df["method"] = df["method"].replace("newton TF16", "Newton-Schutz FP16")
+    df["method"] = df["method"].replace("newton FP32", "Newton-Schutz FP32")
+    df["method"] = df["method"].replace("composite TF16", "composite FP16")
+    df["method"] = df["method"].replace("polarexpress TF16", "Polar Express FP16")
+    df["method"] = df["method"].replace("polarexpress FP32", "Polar Express FP32")
+    df["method"] = df["method"].replace("composite FP32 emulated", "Composite FP32 (emulated)")
+    df["method"] = df["method"].replace("composite FP16", "Composite FP16")
+
 
     # print total execution time
     total_time = df["time"].sum()
     print(f"\nTotal execution time for all methods: {total_time:.2f} s")
 
-    df = df[df["n"] == n]
-    df = df[df["dataset"].isin(datasets[:n_first_datasets])]
+    # df = df[df["n"] == n]
+    # df = df[df["dataset"].isin(datasets[:n_first_datasets])]
 
-    sns.catplot(
-        data=df[df["method"] != "cuSOLVER FP64"],
-        x="dataset",
-        y="relative_error",
-        hue="method",
-        # col="dataset",
-        kind="bar",
-        # height=3,
-        aspect=aspect,
-        palette=sns.color_palette()[1:6],
+    ### Full error plot
+    fig, axs = plt.subplots(3, 1, figsize=(11.7, 8.3))
+    for i, n in enumerate([5000, 10000, 20000]):
+        remove_methods = ["cuSOLVER FP64", "composite FP32"]
+        data = df[~(df["method"].isin(remove_methods)) & (df["n"] == n)]
+        sns.barplot(
+            ax=axs[i],
+            data=data,
+            x="dataset",
+            y="relative_error",
+            hue="method",
+            palette=sns.color_palette()[1:8],
+        )
+        axs[i].set_ylabel("Relative Error")
+        axs[i].set_yscale("log")
+        axs[i].set_title(f"$n={n}$")
+        axs[i].tick_params(axis='x', rotation=45)
+        axs[i].set_xlabel("Dataset" if i == 2 else "")
+
+        axs[i].legend_.remove()
+
+        for label in axs[i].get_xticklabels():
+            label.set_ha('right')
+
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        loc='center left',
+        bbox_to_anchor=(1.01, 0.5),
+        borderaxespad=0.,
+        title="Method"
     )
-    plt.ticklabel_format(style="sci", axis="y", scilimits=(0,0))
-    plt.xlabel("Dataset")
-    plt.ylabel("Relative Error")
-    plt.yscale("log")
-    plt.title(f"$n={n}$")
+    fig.tight_layout()
     plt.savefig("results/benchmark_error.pdf", dpi=300, bbox_inches="tight")
 
-    sns.catplot(
-        data=df,
-        x="dataset",
-        y="time",
-        hue="method",
-        # col="dataset",
-        kind="bar",
-        # height=3,
-        aspect=aspect,
-        palette=sns.color_palette()[:6],
+    ### Full time plot
+    fig, axs = plt.subplots(3, 1, figsize=(11.7, 8.3))
+    for i, n in enumerate([5000, 10000, 20000]):
+        remove_methods = ["composite FP32"]
+        data = df[~(df["method"].isin(remove_methods)) & (df["n"] == n)]
+        sns.barplot(
+            ax=axs[i],
+            data=data,
+            x="dataset",
+            y="time",
+            hue="method",
+            palette=sns.color_palette()[0:8],
+        )
+        axs[i].set_ylabel("Time (s)")
+        axs[i].set_yscale("log")
+        axs[i].set_title(f"$n={n}$")
+        axs[i].tick_params(axis='x', rotation=45)
+        axs[i].set_xlabel("Dataset" if i == 2 else "")
+
+        axs[i].legend_.remove()
+
+        for label in axs[i].get_xticklabels():
+            label.set_ha('right')
+
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        loc='center left',
+        bbox_to_anchor=(1.01, 0.5),
+        borderaxespad=0.,
+        title="Method"
     )
-    plt.xlabel("Dataset")
-    plt.ylabel("Time (s)")
-    plt.title(f"$n={n}$")
+    fig.tight_layout()
     plt.savefig("results/benchmark_time.pdf", dpi=300, bbox_inches="tight")
 
-    with pd.option_context('display.float_format', '{:.2e}'.format):
-        print(f"\nStats for n = {n}, {min(n_first_datasets, n_datasets)} datasets:")
+    # with pd.option_context('display.float_format', '{:.2e}'.format):
+    #     print(f"\nStats for n = {n}, {min(n_first_datasets, n_datasets)} datasets:")
 
-        method_order = [
-            "cuSOLVER FP64", 
-            "cuSOLVER FP32", 
-            "polarexpress FP32",
-            "polarexpress TF16",
-            "newton FP32",
-            "newton TF16",
-            "composite FP32", 
-            "composite FP32 emulated", 
-            "composite TF16"
-        ]
+    #     method_order = [
+    #         "cuSOLVER FP64", 
+    #         "cuSOLVER FP32", 
+    #         "polarexpress FP32",
+    #         "polarexpress TF16",
+    #         "newton FP32",
+    #         "newton TF16",
+    #         "composite FP32", 
+    #         "composite FP32 emulated", 
+    #         "composite TF16"
+    #     ]
 
-        stats = df[df["dataset"] != "triw"].groupby("method").agg({"relative_error": ["mean", "median", "max"], "time": ["mean", "median"]})
-        stats = stats.reindex(method_order)
-        print(stats)
+    ### Average time plot
+    fig, axs = plt.subplots(1, 3, figsize=(10, 5))
+    for i, n in enumerate([5000, 10000, 20000]):
+        remove_methods = ["composite FP32"]
+        data = df[~(df["method"].isin(remove_methods)) & (df["n"] == n)]
 
-        # find the dataset with the maximum relative error of composite FP32
-        df_composite_fp32 = df[df["method"] == "composite FP32"]
-        max_error_dataset = df_composite_fp32.loc[df_composite_fp32["relative_error"].idxmax(), "dataset"]
-        print(f"\nDataset with maximum relative error for composite FP32: {max_error_dataset}")
+        sns.boxplot(
+            ax=axs[i],
+            data=data,
+            x="method",
+            y="time",
+            hue="method",
+            palette=sns.color_palette()[:8],
+            showfliers=False,
+            whis=[10, 90],
+        )
+        axs[i].set_ylabel("Time (s)" if i == 0 else "")
+        axs[i].set_yscale("log")
+        axs[i].set_title(f"$n={n}$")
+        axs[i].tick_params(axis='x', rotation=45)
+        axs[i].set_xlabel("")
 
-        # find the dataset with the maximum relative error of composite TF16
-        df_composite_tf16 = df[df["method"] == "composite TF16"]
-        max_error_dataset = df_composite_tf16.loc[df_composite_tf16["relative_error"].idxmax(), "dataset"]
-        print(f"Dataset with maximum relative error for composite TF16: {max_error_dataset}")
+        for label in axs[i].get_xticklabels():
+            label.set_ha('right')
+
+    fig.tight_layout()
+    plt.savefig("results/benchmark_time_avg.pdf", dpi=300, bbox_inches="tight")
+
+    ### Average error plot
+    fig, axs = plt.subplots(1, 3, figsize=(10, 5))
+    for i, n in enumerate([5000, 10000, 20000]):
+        remove_methods = ["cuSOLVER FP64", "composite FP32"]
+        data = df[~(df["method"].isin(remove_methods)) & (df["n"] == n)]
+
+        sns.boxplot(
+            ax=axs[i],
+            data=data,
+            x="method",
+            y="relative_error",
+            hue="method",
+            palette=sns.color_palette()[1:1+7],
+            showfliers=False,
+            whis=[10, 90],
+        )
+        axs[i].set_ylabel("Relative Error" if i == 0 else "")
+        axs[i].set_yscale("log")
+        axs[i].set_title(f"$n={n}$")
+        axs[i].tick_params(axis='x', rotation=45)
+        axs[i].set_xlabel("")
+
+        for label in axs[i].get_xticklabels():
+            label.set_ha('right')
+
+    fig.tight_layout()
+    plt.savefig("results/benchmark_error_avg.pdf", dpi=300, bbox_inches="tight")
+
+
+        # stats = df[df["dataset"] != "triw"].groupby("method").agg({"relative_error": ["mean", "median", "max"], "time": ["mean", "median"]})
+        # stats = stats.reindex(method_order)
+    #     print(stats)
+
+    #     # find the dataset with the maximum relative error of composite FP32
+    #     df_composite_fp32 = df[df["method"] == "composite FP32"]
+    #     max_error_dataset = df_composite_fp32.loc[df_composite_fp32["relative_error"].idxmax(), "dataset"]
+    #     print(f"\nDataset with maximum relative error for composite FP32: {max_error_dataset}")
+
+    #     # find the dataset with the maximum relative error of composite TF16
+    #     df_composite_tf16 = df[df["method"] == "composite TF16"]
+    #     max_error_dataset = df_composite_tf16.loc[df_composite_tf16["relative_error"].idxmax(), "dataset"]
+    #     print(f"Dataset with maximum relative error for composite TF16: {max_error_dataset}")
