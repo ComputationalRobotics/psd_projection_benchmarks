@@ -13,14 +13,14 @@ datasets=("cauchy" "chebspec" "chow" "circul" "clement" "companion" "dingdong" "
 
 # removed: binomial (overflow), hadamard (power of 2), invhilb (overflow), neumann (sparse), poisson (sparse), rosser (power of 2), wathen (sparse), invol (overflow), pascal (overflow), vand (overflow), randsvd (timeout)
 
-# datasets=("hankel") 
+# datasets=("kahan") 
 
 # datasets=("cauchy" "chebspec" "chow" "circul" "clement" "companion" "dingdong" "fiedler" "forsythe")
 
 # instance_sizes=(5000 10000)
 instance_sizes=(5000)
 
-restarts=25
+restarts=3
 gemmrestarts=1
 
 # build the psd_projection library

@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
     # Load the data
     # df = pd.read_csv("results/saved/psd_results-B200.csv")
-    df = pd.read_csv("results/saved/B200/psd_results-B200-2.csv")
+    df = pd.read_csv("results/psd_results.csv")
     n_datasets = len(pd.unique(df["dataset"]))
     aspect = min(n_first_datasets, n_datasets) / 6
 
@@ -62,7 +62,19 @@ if __name__ == "__main__":
 
     with pd.option_context('display.float_format', '{:.2e}'.format):
         print(f"\nStats for n = {n}, {min(n_first_datasets, n_datasets)} datasets:")
-        method_order = ["cuSOLVER FP64", "cuSOLVER FP32", "composite FP32", "composite FP32 emulated", "composite TF16"]#, "haoyu FP32", "haoyu TF16"]
+
+        method_order = [
+            "cuSOLVER FP64", 
+            "cuSOLVER FP32", 
+            "polarexpress FP32",
+            "polarexpress TF16",
+            "newton FP32",
+            "newton TF16",
+            "composite FP32", 
+            "composite FP32 emulated", 
+            "composite TF16"
+        ]
+
         stats = df[df["dataset"] != "triw"].groupby("method").agg({"relative_error": ["mean", "median", "max"], "time": ["mean", "median"]})
         stats = stats.reindex(method_order)
         print(stats)
