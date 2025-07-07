@@ -1,6 +1,9 @@
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+from matplotlib.ticker import LogLocator
+from matplotlib.ticker import FormatStrFormatter
 
 from matplotlib import rc
 rc("font", **{"family": "serif", "serif": ["Computer Modern"]})
@@ -135,15 +138,41 @@ if __name__ == "__main__":
         )
         axs[i].set_ylabel("Time (s)" if i == 0 else "")
         axs[i].set_yscale("log")
+        axs[i].yaxis.set_major_locator(LogLocator(base=10.0, numticks=30))
+        axs[i].yaxis.set_minor_locator(LogLocator(base=10.0, subs=[1,2,3,4,5,6,7,8,9], numticks=100))
+        axs[i].tick_params(axis='y', which='minor', labelsize=8)
+        axs[i].tick_params(axis='y', which='major', labelsize=10)
+        # Show minor tick labels (can be verbose):
+        axs[i].yaxis.set_minor_formatter(FormatStrFormatter('%.0e'))
+        axs[i].yaxis.set_major_formatter(FormatStrFormatter('%.0e'))
+        # axs[i].tick_params(axis='y', which='minor', labelleft=True, left=True)
+        # axs[i].tick_params(axis='y', which='major', labelleft=True, left=True)
+
         axs[i].set_title(f"$n={n}$")
-        axs[i].tick_params(axis='x', rotation=45)
+        axs[i].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
         axs[i].set_xlabel("")
+        axs[i].grid(axis='y', linestyle='--', alpha=0.7, which='both')
+        axs[i].grid(axis='x', linestyle='-', alpha=0.7, which='both')
 
-        for label in axs[i].get_xticklabels():
-            label.set_ha('right')
 
-    fig.tight_layout()
+    methods = df[~df["method"].isin(remove_methods)]["method"].unique()
+    palette = sns.color_palette()[:len(methods)]
+
+    handles = [Patch(facecolor=palette[i], label=method) for i, method in enumerate(methods)]
+
+    fig.legend(
+        handles, methods,
+        loc='lower center',
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=len(methods)//2,
+        frameon=True,
+        title="Method"
+    )
+
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     plt.savefig("results/benchmark_time_avg.pdf", dpi=300, bbox_inches="tight")
+
+
 
     ### Average error plot
     fig, axs = plt.subplots(1, 3, figsize=(10, 5))
@@ -165,12 +194,28 @@ if __name__ == "__main__":
         axs[i].set_yscale("log")
         axs[i].set_title(f"$n={n}$")
         axs[i].tick_params(axis='x', rotation=45)
+        axs[i].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
         axs[i].set_xlabel("")
+        axs[i].grid(axis='y', linestyle='--', alpha=0.7, which='both')
 
-        for label in axs[i].get_xticklabels():
-            label.set_ha('right')
+        # for label in axs[i].get_xticklabels():
+        #     label.set_ha('right')
 
-    fig.tight_layout()
+    methods = df[~df["method"].isin(remove_methods)]["method"].unique()
+    palette = sns.color_palette()[1:1+len(methods)]
+
+    handles = [Patch(facecolor=palette[i], label=method) for i, method in enumerate(methods)]
+
+    fig.legend(
+        handles, methods,
+        loc='lower center',
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=len(methods)//2+len(methods)%2,
+        frameon=True,
+        title="Method"
+    )
+
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     plt.savefig("results/benchmark_error_avg.pdf", dpi=300, bbox_inches="tight")
 
 

@@ -342,7 +342,7 @@ void fill_tridiagonal(
 void approximate_two_norm(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,
-    double* A, size_t n,
+    const double* A, size_t n,
     double* lo, double* up,
     size_t max_iter = 20, double tol = 1e-10
 ) {

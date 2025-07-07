@@ -18,9 +18,9 @@ datasets=("cauchy" "chebspec" "chow" "circul" "clement" "companion" "dingdong" "
 # datasets=("cauchy" "chebspec" "chow" "circul" "clement" "companion" "dingdong" "fiedler" "forsythe")
 
 # instance_sizes=(5000 10000)
-instance_sizes=(5000)
+instance_sizes=(5000 10000 20000)
 
-restarts=3
+restarts=1
 gemmrestarts=1
 
 # build the psd_projection library
