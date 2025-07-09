@@ -1,5 +1,6 @@
 import pandas as pd
 import seaborn as sns
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from matplotlib.ticker import LogLocator
@@ -12,6 +13,25 @@ rc("font", **{"family": "serif", "serif": ["Computer Modern"]})
 rc("text", usetex=True)
 
 datasets = ["cauchy", "chebspec", "chow", "circul", "clement", "companion", "dingdong", "fiedler", "forsythe", "frank", "golub", "grcar", "hankel", "hilb", "kahan", "kms", "lehmer", "lotkin", "magic", "minij", "moler", "oscillate", "parter", "pei", "prolate", "randcorr", "rando", "rohess", "sampling", "toeplitz", "tridiag", "triw", "wilkinson"]
+
+import matplotlib.ticker as mtick
+
+# ------------------------------------------------------------------
+#  put this inside the loop where you configure each Axes (ax = axs[i])
+# ------------------------------------------------------------------
+# sci_fmt = mtick.ScalarFormatter(useMathText=True)  # 5×10^{1} style
+# sci_fmt.set_scientific(True)       # force scientific notation
+# sci_fmt.set_powerlimits((0, 0))    # ... for *all* numbers
+# sci_fmt.set_useOffset(False)       # no offset like "×10³" in the corner
+
+def sci_fmt(x, _pos):
+    if x == 0:
+        return "0"
+    exp   = int(np.floor(np.log10(x)))
+    coeff = x / 10**exp
+    if np.isclose(coeff, 1):
+        return rf"$10^{{{exp}}}$"                #   10^{−2}
+    return rf"${coeff:g}\times10^{{{exp}}}$"     # 2×10^{−2}
 
 if __name__ == "__main__":
     n_first_datasets = len(datasets)
@@ -74,12 +94,21 @@ if __name__ == "__main__":
             label.set_ha('right')
 
     handles, labels = axs[0].get_legend_handles_labels()
+    # fig.legend(
+    #     handles, labels,
+    #     loc='center left',
+    #     bbox_to_anchor=(1.01, 0.5),
+    #     borderaxespad=0.,
+    #     title="Method"
+    # )
     fig.legend(
         handles, labels,
-        loc='center left',
-        bbox_to_anchor=(1.01, 0.5),
+        loc='upper center',
+        bbox_to_anchor=(0.5, 1.02),   # slightly above the plot; tweak as needed
+        ncol=len(labels),             # This puts all labels in one row
         borderaxespad=0.,
-        title="Method"
+        # title="Method",
+        fontsize='small'  # or an integer like 8
     )
     fig.tight_layout()
     plt.savefig(output_prefix + "-error.pdf", dpi=300, bbox_inches="tight")
@@ -113,12 +142,21 @@ if __name__ == "__main__":
             label.set_ha('right')
 
     handles, labels = axs[0].get_legend_handles_labels()
+    # fig.legend(
+    #     handles, labels,
+    #     loc='center left',
+    #     bbox_to_anchor=(1.01, 0.5),
+    #     borderaxespad=0.,
+    #     title="Method"
+    # )
     fig.legend(
         handles, labels,
-        loc='center left',
-        bbox_to_anchor=(1.01, 0.5),
+        loc='upper center',
+        bbox_to_anchor=(0.5, 1.02),   # slightly above the plot; tweak as needed
+        ncol=len(labels),             # This puts all labels in one row
         borderaxespad=0.,
-        title="Method"
+        # title="Method",
+        fontsize='small'  # or an integer like 8
     )
     fig.tight_layout()
     plt.savefig(output_prefix + "-time.pdf", dpi=300, bbox_inches="tight")
@@ -139,7 +177,7 @@ if __name__ == "__main__":
     #     ]
 
     ### Average time plot
-    fig, axs = plt.subplots(1, 3, figsize=(10, 5))
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3.5))
     for i, n in enumerate([5000, 10000, 20000]):
         remove_methods = []
         data = df[~(df["method"].isin(remove_methods)) & (df["n"] == n)]
@@ -153,17 +191,27 @@ if __name__ == "__main__":
             y="time",
             hue="method",
             palette=palette,
-            showfliers=False,
-            whis=[10, 90],
+            # showfliers=False,
+            # whis=[10, 90],
+            showfliers=True,
+            whis=1.5,
         )
+
+        # Change default outlier marker from 'o' to '+' --------------------
+        for line in axs[i].lines:
+            if line.get_marker() == 'o':
+                line.set_marker('+')
+                line.set_markersize(6)
+                line.set_markeredgewidth(1.0)
+
         axs[i].set_ylabel("Time (s)" if i == 0 else "")
         axs[i].set_yscale("log")
-        axs[i].yaxis.set_major_locator(LogLocator(base=10.0, numticks=30))
-        axs[i].yaxis.set_minor_locator(LogLocator(base=10.0, subs=[1,2,3,4,5,6,7,8,9], numticks=100))
+        axs[i].yaxis.set_major_locator(LogLocator(base=10.0, numticks=10))
+        axs[i].yaxis.set_minor_locator(LogLocator(base=10.0, subs=[2, 4, 6, 8], numticks=100))
         axs[i].tick_params(axis='y', which='minor', labelsize=8)
         axs[i].tick_params(axis='y', which='major', labelsize=10)
-        axs[i].yaxis.set_minor_formatter(FormatStrFormatter('%.0e'))
-        axs[i].yaxis.set_major_formatter(FormatStrFormatter('%.0e'))
+        axs[i].yaxis.set_minor_formatter(sci_fmt)
+        axs[i].yaxis.set_major_formatter(sci_fmt)
 
         axs[i].set_title(f"$n={n}$")
         axs[i].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
@@ -179,18 +227,19 @@ if __name__ == "__main__":
 
     fig.legend(
         handles, methods,
-        loc='lower center',
-        bbox_to_anchor=(0.5, -0.15),
-        ncol=len(methods)//2+len(methods)%2,
+        loc='center right',
+        bbox_to_anchor=(1.22, 0.5),  # Slightly outside the plot on the right
+        borderaxespad=0.,
+        ncol=1,
         frameon=True,
-        title="Method"
+        # title="Method"
     )
 
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     plt.savefig(output_prefix + "-time-avg.pdf", dpi=300, bbox_inches="tight")
 
     ### Average error plot
-    fig, axs = plt.subplots(1, 3, figsize=(10, 5))
+    fig, axs = plt.subplots(1, 3, figsize=(10, 3.5))
     for i, n in enumerate([5000, 10000, 20000]):
         remove_methods = ["cuSOLVER FP64"]
         data = df[~(df["method"].isin(remove_methods)) & (df["n"] == n)]
@@ -204,11 +253,31 @@ if __name__ == "__main__":
             y="relative_error",
             hue="method",
             palette=palette,
-            showfliers=False,
-            whis=[10, 90],
+            # showfliers=False,
+            # whis=[10, 90],
+            showfliers=True,
+            whis=1.5,
         )
+
+        # Change default outlier marker from 'o' to '+' --------------------
+        for line in axs[i].lines:
+            if line.get_marker() == 'o':
+                line.set_marker('+')
+                line.set_markersize(6)
+                line.set_markeredgewidth(1.0)
+        
+        # axs[i].yaxis.set_major_locator(LogLocator(base=10.0))
+        # axs[i].yaxis.set_minor_locator(LogLocator(base=10.0,
+        #                                       subs=np.arange(1, 10) * 0.1))
+
+        
+
         axs[i].set_ylabel("Relative Error" if i == 0 else "")
         axs[i].set_yscale("log")
+        axs[i].yaxis.set_major_locator(LogLocator(base=10.0, numticks=10))
+        axs[i].yaxis.set_minor_locator(LogLocator(base=10.0, subs=[2, 4, 6, 8], numticks=100))
+        axs[i].tick_params(axis='y', which='minor', labelsize=8)
+        axs[i].tick_params(axis='y', which='major', labelsize=10)
         axs[i].set_title(f"$n={n}$")
         axs[i].tick_params(axis='x', rotation=45)
         axs[i].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
@@ -225,27 +294,29 @@ if __name__ == "__main__":
 
     fig.legend(
         handles, methods,
-        loc='lower center',
-        bbox_to_anchor=(0.5, -0.15),
-        ncol=len(methods)//2+len(methods)%2,
+        loc='center right',
+        bbox_to_anchor=(1.22, 0.5),  # Slightly outside the plot on the right
+        borderaxespad=0.,
+        ncol=1,
         frameon=True,
-        title="Method"
+        # title="Method"
     )
 
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     plt.savefig(output_prefix + "-error-avg.pdf", dpi=300, bbox_inches="tight")
 
 
-        # stats = df[df["dataset"] != "triw"].groupby("method").agg({"relative_error": ["mean", "median", "max"], "time": ["mean", "median"]})
-        # stats = stats.reindex(method_order)
+    # for n in [5000, 10000, 20000]:
+    #     stats = df.groupby("method").agg({"relative_error": ["mean", "median", "max", "std"], "time": ["mean", "median", "std"]})
+    #     stats = stats.reindex(methods)
     #     print(stats)
 
-    #     # find the dataset with the maximum relative error of composite FP32
-    #     df_composite_fp32 = df[df["method"] == "composite FP32"]
-    #     max_error_dataset = df_composite_fp32.loc[df_composite_fp32["relative_error"].idxmax(), "dataset"]
-    #     print(f"\nDataset with maximum relative error for composite FP32: {max_error_dataset}")
+        # find the dataset with the maximum relative error of composite FP32
+        # df_composite_fp32 = df[df["method"] == "composite FP32"]
+        # max_error_dataset = df_composite_fp32.loc[df_composite_fp32["relative_error"].idxmax(), "dataset"]
+        # print(f"\nDataset with maximum relative error for composite FP32: {max_error_dataset}")
 
-    #     # find the dataset with the maximum relative error of composite TF16
-    #     df_composite_tf16 = df[df["method"] == "composite TF16"]
-    #     max_error_dataset = df_composite_tf16.loc[df_composite_tf16["relative_error"].idxmax(), "dataset"]
-    #     print(f"Dataset with maximum relative error for composite TF16: {max_error_dataset}")
+        # # find the dataset with the maximum relative error of composite TF16
+        # df_composite_tf16 = df[df["method"] == "composite TF16"]
+        # max_error_dataset = df_composite_tf16.loc[df_composite_tf16["relative_error"].idxmax(), "dataset"]
+        # print(f"Dataset with maximum relative error for composite TF16: {max_error_dataset}")
