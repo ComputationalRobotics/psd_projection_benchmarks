@@ -42,8 +42,8 @@ if __name__ == "__main__":
     n_datasets = len(pd.unique(df["dataset"]))
 
     # renames
-    df["method"] = df["method"].replace("newton TF16", "Newton-Schutz FP16")
-    df["method"] = df["method"].replace("newton FP32", "Newton-Schutz FP32")
+    df["method"] = df["method"].replace("newton TF16", "Newton-Schulz FP16")
+    df["method"] = df["method"].replace("newton FP32", "Newton-Schulz FP32")
     df["method"] = df["method"].replace("composite TF16", "composite FP16")
     df["method"] = df["method"].replace("polarexpress TF16", "Polar Express FP16")
     df["method"] = df["method"].replace("polarexpress FP32", "Polar Express FP32")
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     df["method"] = df["method"].replace("composite FP32 emulated", "Composite FP32 (emulated)")
     df["method"] = df["method"].replace("composite FP16", "Composite FP16")
 
-    methods = ["cuSOLVER FP64", "cuSOLVER FP32", "Polar Express FP32", "Polar Express FP16", "Newton-Schutz FP32", "Newton-Schutz FP16", "Composite FP32", "Composite FP32 (emulated)", "Composite FP16"]
+    methods = ["cuSOLVER FP64", "cuSOLVER FP32", "Polar Express FP32", "Polar Express FP16", "Newton-Schulz FP32", "Newton-Schulz FP16", "Composite FP32", "Composite FP32 (emulated)", "Composite FP16"]
     method_colors = {m: color for m, color in zip(methods, sns.color_palette("tab10", len(methods)))}
     
     # print total execution time
