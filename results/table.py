@@ -36,8 +36,12 @@ if __name__ == "__main__":
 
     ### Statistics table
     for n in [5000, 10000, 20000]:
-        stats = df.groupby("Method").agg({"Relative Error": ["mean", "median", "std"], "Time (s)": ["mean", "median", "std"]})
-        stats = stats.reindex(methods)
+        data = df[df["Size"] == n]
+        data = data[data["Method"] != "Composite FP32"]
+        stats = data.groupby("Method").agg({"Relative Error": ["mean", "median", "std"], "Time (s)": ["mean", "median", "std"]})
+        methods_no_fp32 = methods.copy()
+        methods_no_fp32.remove("Composite FP32")
+        stats = stats.reindex(methods_no_fp32)
         styler = stats.style
         # styler = stats.style.highlight_min(axis=0, props='bfseries:;')
         styler = styler.format(precision=2, formatter="\\num{{{:.2e}}}".format)
