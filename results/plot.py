@@ -37,8 +37,8 @@ if __name__ == "__main__":
     n_first_datasets = len(datasets)
 
     # Load the data
-    df = pd.read_csv("results/saved/final/B200.csv")
-    output_prefix = "results/saved/paper/B200"
+    df = pd.read_csv("results/saved/final/H100.csv")
+    output_prefix = "results/saved/paper/H100"
     n_datasets = len(pd.unique(df["dataset"]))
 
     # renames
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     fig.legend(
         handles, methods,
         loc='center right',
-        bbox_to_anchor=(1.22, 0.5),  # Slightly outside the plot on the right
+        bbox_to_anchor=(1.18, 0.5),  # Slightly outside the plot on the right
         borderaxespad=0.,
         ncol=1,
         frameon=True,
@@ -295,7 +295,7 @@ if __name__ == "__main__":
     fig.legend(
         handles, methods,
         loc='center right',
-        bbox_to_anchor=(1.22, 0.5),  # Slightly outside the plot on the right
+        bbox_to_anchor=(1.18, 0.5),  # Slightly outside the plot on the right
         borderaxespad=0.,
         ncol=1,
         frameon=True,

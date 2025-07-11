@@ -1,8 +1,5 @@
 import pandas as pd
 
-error_file = "results/benchmark_error.tex"
-time_file = "results/benchmark_time.tex"
-
 GPU = "B200"
 
 if __name__ == "__main__":
@@ -24,23 +21,15 @@ if __name__ == "__main__":
 
     # change the column names
     df.columns = ["Dataset", "Size", "Method", "Time (s)", "Relative Error"]
-    
-    # open error_file for writing
-    with open(error_file, "w") as f:
-        f.write(df.to_latex(index=False, float_format="%.2e", caption="Relative error of the PSD projection methods on different datasets.", label="tab:benchmark_error"))
-
-    # open time_file for writing
-    with open(time_file, "w") as f:
-        f.write(df.to_latex(index=False, float_format="%.2e", caption="Time taken by the PSD projection methods on different datasets.", label="tab:benchmark_time"))
-
 
     ### Statistics table
     for n in [5000, 10000, 20000]:
         data = df[df["Size"] == n]
-        data = data[data["Method"] != "Composite FP32"]
+        remove = "Composite FP32" if GPU == "B200" else "Composite FP32 (emulated)"
+        data = data[data["Method"] != remove]
         stats = data.groupby("Method").agg({"Relative Error": ["mean", "median", "std"], "Time (s)": ["mean", "median", "std"]})
         methods_no_fp32 = methods.copy()
-        methods_no_fp32.remove("Composite FP32")
+        methods_no_fp32.remove(remove)
         stats = stats.reindex(methods_no_fp32)
         styler = stats.style
         # styler = stats.style.highlight_min(axis=0, props='bfseries:;')

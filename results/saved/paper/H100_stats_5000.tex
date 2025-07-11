@@ -1,0 +1,20 @@
+\begin{table}
+\caption{Results of the PSD projection methods on datasets of size 5000 for H100 GPU.}
+\label{tab:benchmark_stats_5000_H100}
+\begin{tabular}{lllllllll}
+\toprule
+{} & \multicolumn{3}{c}{Relative Error} & \multicolumn{3}{c}{Time (s)} \\
+{} & {\quad Mean} & {\quad Median} & {\quad Std.} & {\quad Mean} & {\quad Median} & {\quad Std.} \\
+{Method} & {} & {} & {} & {} & {} & {} \\
+\midrule
+cuSOLVER FP64 & \num{0.00e+00} & \num{0.00e+00} & \num{0.00e+00} & \num{2.38e-01} & \num{2.36e-01} & \num{1.88e-02} \\
+cuSOLVER FP32 & \num{7.96e-06} & \num{3.10e-06} & \num{1.06e-05} & \num{2.05e-01} & \num{1.93e-01} & \num{3.28e-02} \\
+Polar Express FP32 & \num{5.43e-05} & \num{9.70e-06} & \num{7.31e-05} & \num{1.79e-01} & \num{1.79e-01} & \num{1.85e-03} \\
+Polar Express FP16 & \num{1.83e-03} & \num{4.08e-04} & \num{5.38e-03} & \num{2.06e-02} & \num{2.01e-02} & \num{3.34e-03} \\
+Newton-Schulz FP32 & \num{1.47e-02} & \num{4.77e-04} & \num{7.07e-02} & \num{1.85e-01} & \num{1.85e-01} & \num{2.42e-03} \\
+Newton-Schulz FP16 & \num{2.49e-02} & \num{4.14e-03} & \num{8.70e-02} & \num{2.32e-02} & \num{2.33e-02} & \num{1.38e-03} \\
+Composite FP32 & \num{4.93e-05} & \num{7.95e-06} & \num{8.21e-05} & \num{1.79e-01} & \num{1.79e-01} & \num{2.51e-03} \\
+Composite FP16 & \num{1.05e-03} & \num{3.95e-04} & \num{1.50e-03} & \num{1.99e-02} & \num{2.01e-02} & \num{1.39e-03} \\
+\bottomrule
+\end{tabular}
+\end{table}
