@@ -1,7 +1,0 @@
-Warming up the GPU... done.
-
-DATASET 'kahan' WITH INSTANCE SIZE 10000
-	 PSD cone projection
-Max and min eigenvalues: 48.5785, -51.315
-Max and min eigenvalues: 48.5785, -51.315
-Max and min eigenvalues: 48.5785, -51.315

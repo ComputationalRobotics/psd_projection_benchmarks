@@ -14,3 +14,4 @@ ksc/debug
 ksc/test_haoyu_TF16
 *.csv
 ksc
+*.txt
